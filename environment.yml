@@ -1,0 +1,15 @@
+name: hemicosmo
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy
+  - matplotlib
+  - healpy
+  - camb
+  - namaster          # provides the `pymaster` module (NaMaster)
+  - iminuit
+  - corner
+  - threadpoolctl     # pin sim workers to 1 BLAS/OpenMP thread each
+  - pip
