@@ -1,27 +1,20 @@
 """
 Composite-sky bandpower simulations.
 
-Each realization draws two Gaussian full-sky maps (north cosmology and south
-cosmology; same primordial phases in 'shared' mode), blends them with the
-partition-of-unity Galactic window, optionally beam-smooths, removes the monopole
-inside the mask, and returns the decoupled D_l bandpowers over the full binning.
-
-Realizations are embarrassingly parallel and are distributed over a process pool
-(`n_threads` workers, defaulting to 50% of the logical cores so the machine stays
-usable on a laptop and scales on a cluster). Each worker is pinned to a single
-BLAS/OpenMP thread (via threadpoolctl when available) to avoid oversubscription.
+Each realization draws two Gaussian full-sky maps (same primordial phases in 'shared' mode)
+Blends them with the Galactic window, 
+Removes the monopole, 
+Returns the decoupled D_l bandpowers over the full binning.
 
 Results are cached to .npz keyed by config + both cosmologies, so re-runs and
 larger sim counts are incremental.
 """
-from __future__ import annotations
 
+from __future__ import annotations
 import os
 from concurrent.futures import ProcessPoolExecutor
-
 import numpy as np
 import healpy as hp
-
 from .config import RunConfig, Cosmology
 from .theory import cosmology_to_cls
 from .masks import galactic_hemisphere_weight, subtract_monopole
@@ -30,7 +23,7 @@ from .spectra import make_binning, get_workspace, bandpowers_from_map
 try:
     from threadpoolctl import threadpool_limits
     _HAVE_TPC = True
-except ImportError:                     # pragma: no cover
+except ImportError:                     
     _HAVE_TPC = False
 
 
@@ -41,27 +34,31 @@ def sims_path(cfg: RunConfig, north: Cosmology, south: Cosmology) -> str:
 
 
 def resolve_workers(cfg: RunConfig) -> int:
-    """Number of parallel sim workers: cfg.n_threads or 50% of logical cores."""
+    """
+    Number of parallel sim workers: cfg.n_threads or 50% of logical cores
+    """
     if cfg.n_threads and cfg.n_threads > 0:
         return int(cfg.n_threads)
     return max(1, (os.cpu_count() or 2) // 2)
 
 
 def _make_seeds(cfg: RunConfig, n_new: int, offset: int):
-    """Deterministic (north, south) seed pairs, independent of worker count."""
     shared = (cfg.phase_mode == "shared")
-    rng = np.random.default_rng(cfg.seed + offset)
+    rng_n = np.random.default_rng(cfg.seed + offset)
+    rng_s = np.random.default_rng(cfg.seed + offset + 100000)
     seeds = []
     for _ in range(n_new):
-        sn = int(rng.integers(0, 2**31 - 1))
-        ss = sn if shared else int(rng.integers(0, 2**31 - 1))
+        sn = int(rng_n.integers(0, 2**31 - 1))
+        ss = sn if shared else int(rng_s.integers(0, 2**31 - 1))
         seeds.append((sn, ss))
     return seeds
 
 
 def _one_bandpower(cfg, mask, wsp, binning, Wn, Ws, cl_n, cl_s, fwhm,
                    seed_n, seed_s):
-    """Compute the D_l bandpowers of a single composite realization."""
+    """
+    Compute the D_l bandpowers of a single composite realization
+    """
     np.random.seed(seed_n)
     m_n = hp.synfast(cl_n, cfg.nside, lmax=cfg.lmax_map, pixwin=True, new=True)
     np.random.seed(seed_s)
@@ -72,11 +69,7 @@ def _one_bandpower(cfg, mask, wsp, binning, Wn, Ws, cl_n, cl_s, fwhm,
     comp = subtract_monopole(comp, mask)
     return bandpowers_from_map(comp, mask, wsp, binning)
 
-
-# --- worker-side globals (populated once per process by the initializer) ---
 _WK: dict = {}
-
-
 def _init_worker(cfg, cl_n, cl_s):
     mask = load_common_mask_silent(cfg)
     binning = make_binning(cfg)
@@ -105,7 +98,9 @@ def _worker_task(task):
 def get_or_generate_sims(nsims: int, north: Cosmology, south: Cosmology,
                          cfg: RunConfig, mask: np.ndarray, wsp, binning,
                          verbose: bool = True) -> np.ndarray:
-    """Return an [nsims, nbin] array of D_l bandpowers (cached, incremental)."""
+    """
+    Return an [nsims, nbin] array of D_l bandpowers (cached, incremental)
+    """
     savefile = sims_path(cfg, north, south)
     nbin = binning.get_n_bands()
 
@@ -136,7 +131,6 @@ def get_or_generate_sims(nsims: int, north: Cosmology, south: Cosmology,
     new_Cb = np.zeros((n_new, nbin))
     done = 0
     if workers <= 1:
-        # serial path (small runs / debugging): reuse main-process objects
         Wn = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=True)
         fwhm = np.radians(cfg.beam_fwhm_deg) if cfg.beam_fwhm_deg > 0 else 0.0
         for i, sn, ss in tasks:
@@ -163,7 +157,9 @@ def get_or_generate_sims(nsims: int, north: Cosmology, south: Cosmology,
 
 
 def covariance(all_Cb: np.ndarray, reg: float = 1e-6) -> np.ndarray:
-    """Sample covariance of the bandpowers with a tiny diagonal regularizer."""
+    """
+    Sample covariance of the bandpowers with a diagonal regularizer
+    """
     cov = np.cov(all_Cb, rowvar=False, ddof=1)
     cov += np.eye(cov.shape[0]) * (reg * np.median(np.diag(cov)))
     return cov

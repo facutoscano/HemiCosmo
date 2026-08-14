@@ -1,6 +1,5 @@
-#!/usr/bin/env python
 """
-STEP 2 -- Asymmetric sky bias.
+Asymmetric sky bias.
 
 North hemisphere = cosmology A, South = cosmology B (split at Galactic b=0,
 observed through the common mask). We:

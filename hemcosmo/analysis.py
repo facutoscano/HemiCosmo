@@ -1,17 +1,19 @@
 """
-Summaries: parameter-recovery / bias tables, goodness-of-fit, and the
-hemispherical-asymmetry hypothesis test.
+Parameter-recovery / bias tables
+Goodness-of-fit
+Hemispherical-asymmetry hypothesis test.
 """
-from __future__ import annotations
 
+from __future__ import annotations
 import numpy as np
 from scipy.stats import chi2 as chi2_dist
-
 from .config import Cosmology, PARAM_NAMES
 
 
 def pte(chi2_val: float, ndof: int) -> float:
-    """Probability-to-exceed of a chi^2 value."""
+    """
+    Probability-to-exceed of a chi^2 value
+    """
     return float(chi2_dist.sf(chi2_val, df=ndof))
 
 
@@ -27,7 +29,9 @@ _HEADS = ["H0", "omega_b h^2", "omega_c h^2", "n_s", "1e9 As e^-2tau"]
 
 
 def print_param_table(rows, title="PARAMETER TABLE"):
-    """rows: list of (label, 5-vector). Prints a boxed table."""
+    """
+    rows: list of (label, 5-vector). Prints a boxed table
+    """
     header = f"| {'Parameter':<26} |"
     for h in _HEADS:
         header += f" {h:<11} |"
@@ -44,7 +48,9 @@ def print_param_table(rows, title="PARAMETER TABLE"):
 
 def validation_summary(fit_values, fit_errors, truth: Cosmology,
                        chi2_val, ndof):
-    """Null test: does the full-sky fit recover the (single) input cosmology?"""
+    """
+    Null test: does the full-sky fit recover the input cosmology?
+    """
     truth_vec = truth.as_vector()
     pull = (fit_values - truth_vec) / fit_errors
     print_param_table(
@@ -62,11 +68,8 @@ def validation_summary(fit_values, fit_errors, truth: Cosmology,
 
 def bias_summary(fit_values, fit_errors, north: Cosmology, south: Cosmology,
                  fiducial: Cosmology, chi2_val, ndof):
-    """Asymmetric test: report the effective full-sky fit and its bias.
-
-    The 'bias' is quoted relative to the fiducial (the cosmology a standard
-    analysis would assume) and expressed in units of the single-sky Hesse error.
-    The naive fsky-weighted midpoint of (north, south) is shown for context.
+    """
+    Asymmetric test: report the effective full-sky fit and its bias
     """
     n_vec, s_vec = north.as_vector(), south.as_vector()
     mid = 0.5 * (n_vec + s_vec)
@@ -92,7 +95,9 @@ def bias_summary(fit_values, fit_errors, north: Cosmology, south: Cosmology,
 
 
 def hypothesis_test(chi2_null_dist, chi2_obs, label=""):
-    """Empirical p-value of an observed chi^2 against the null distribution."""
+    """
+    Empirical p-value of an observed chi^2 against the null distribution
+    """
     chi2_null_dist = np.asarray(chi2_null_dist).ravel()
     lim95 = np.percentile(chi2_null_dist, 95)
     p_emp = np.mean(chi2_null_dist >= chi2_obs)
