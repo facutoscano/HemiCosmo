@@ -16,10 +16,10 @@ from .spectra import bandpowers_from_theory
 
 
 # Fit-basis fiducial
-INIT = dict(H0=67.0, ombh2=0.0223, omch2=0.119, ns=0.965, Ase=1.88)
+INIT = dict(H0=67.0, ombh2=0.0223, omch2=0.119, ns=0.965, As_tau=1.88)
 LIMITS = dict(H0=(55.0, 85.0), ombh2=(0.017, 0.030), omch2=(0.08, 0.20),
-              ns=(0.85, 1.05), Ase=(1.0, 3.0))
-STEPS = dict(H0=0.3, ombh2=7e-4, omch2=3e-3, ns=0.005, Ase=0.02)
+              ns=(0.85, 1.05), As_tau=(1.0, 3.0))
+STEPS = dict(H0=0.3, ombh2=7e-4, omch2=3e-3, ns=0.005, As_tau=0.02)
 
 
 def hartlap_factor(nsims: int, nbins: int) -> float:
@@ -44,9 +44,9 @@ def make_chi2(data_dl, cov, wsp, binning, cfg: RunConfig, tau: float,
     nbin = data_dl.size
     cinv = hartlap_factor(nsims_cov, nbin) * np.linalg.inv(cov)
 
-    def chi2(H0, ombh2, omch2, ns, Ase):
+    def chi2(H0, ombh2, omch2, ns, As_tau):
         try:
-            cosmo = cosmo_from_fit(H0, ombh2, omch2, ns, Ase, tau)
+            cosmo = cosmo_from_fit(H0, ombh2, omch2, ns, As_tau, tau)
             cl = cosmology_to_cls(cosmo, cfg.lmax_map, cfg.lens_potential_accuracy)
         except Exception as exc:                       # non-physical params
             print(f"[likelihood] CAMB failed: {exc}")
