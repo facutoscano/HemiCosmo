@@ -84,8 +84,8 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
     for it in range(n_iter):
         if it > 0 and it % refresh_every == 0:
             _, A = compute_jacobian(theta, tau, wsp, binning, cfg, beam, steps=DEFAULT_STEPS, verbose=False)
-            accepted = False
-            converged = False
+        accepted = False
+        converged = False
 
         for bt in range(max_mu_tries):
             if bt == refresh_after_tries:
