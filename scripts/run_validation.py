@@ -79,6 +79,7 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, beam):
     else:
         fit = linear_fit(mean_null, cov, theta0, A, FIDUCIAL.tau, wsp, binning,
                          cfg, beam=beam, nsims_cov=cfg.nsims)
+        print(f"[response] converged={fit['converged']}  n_iter={fit.get('n_iter','?')}  dtheta={fit['dtheta']}")
 
     ## Chi^2 distribution
     cinv = hartlap_factor(cfg.nsims, nbin) * np.linalg.inv(cov)
