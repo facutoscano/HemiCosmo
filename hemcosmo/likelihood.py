@@ -51,7 +51,7 @@ def make_chi2(data_dl, cov, wsp, binning, cfg: RunConfig, tau: float,
         except Exception as exc:                       # non-physical params
             print(f"[likelihood] CAMB failed: {exc}")
             return 1e30
-        model = bandpowers_from_theory(cfg, cl, wsp, binning, beam=beam)[bin_sel]
+        model = bandpowers_from_theory(cl, wsp, binning, beam=beam)[bin_sel]
         diff = data_dl - model
         val = float(diff @ cinv @ diff)
         return val if np.isfinite(val) else 1e30

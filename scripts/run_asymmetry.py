@@ -75,7 +75,7 @@ def main(args):
                          cfg, beam=beam, nsims_cov=cfg.nsims)
     best_cosmo = cosmo_from_fit(*fit["values"], FIDUCIAL.tau)
     cl_best = cosmology_to_cls(best_cosmo, cfg.lmax_map, cfg.lens_potential_accuracy)
-    model_best = bandpowers_from_theory(cfg, cl_best, wsp, binning, beam=beam)
+    model_best = bandpowers_from_theory(cl_best, wsp, binning, beam=beam)
 
     # single-sky "systematic" misfit of the effective LCDM (noise-free residual)
     r = mean_asym - model_best

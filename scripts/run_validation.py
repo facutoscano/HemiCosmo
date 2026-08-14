@@ -104,7 +104,7 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, beam):
 
     best_cosmo = cosmo_from_fit(*fit["values"], FIDUCIAL.tau)
     cl_best = cosmology_to_cls(best_cosmo, cfg.lmax_map, cfg.lens_potential_accuracy)
-    model_bestfit = bandpowers_from_theory(cfg, cl_best, wsp, binning, beam=beam)
+    model_bestfit = bandpowers_from_theory(cl_best, wsp, binning, beam=beam)
     plots.plot_bandpowers(ells, mean_null, model_bestfit, sigma,
                           os.path.join(cfg.results_dir, f"validation_bandpowers_{cfg.key()}.png"),
                           title="Null test: mean sims vs best-fit LCDM")

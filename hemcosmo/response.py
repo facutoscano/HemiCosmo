@@ -24,7 +24,7 @@ def model_bandpowers(theta, tau, wsp, binning, cfg: RunConfig, beam=None):
     """
     cosmo = cosmo_from_fit(*theta, tau)
     cl = cosmology_to_cls(cosmo, cfg.lmax_map, cfg.lens_potential_accuracy)
-    return bandpowers_from_theory(cfg, cl, wsp, binning, beam=beam)
+    return bandpowers_from_theory(cl, wsp, binning, beam=beam)
 
 
 def compute_jacobian(theta0, tau, wsp, binning, cfg: RunConfig, beam=None,
