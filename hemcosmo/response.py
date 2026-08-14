@@ -35,7 +35,7 @@ def compute_jacobian(theta0, tau, wsp, binning, cfg: RunConfig, beam=None,
     theta0 = np.asarray(theta0, float)
     steps = np.asarray(steps, float)
     if verbose:
-        print("[response] computing Jacobian (~11 CAMB calls)...")
+        print("[response] computing Jacobian...")
     D0 = model_bandpowers(theta0, tau, wsp, binning, cfg, beam)
     A = np.zeros((D0.size, theta0.size))
     for i in range(theta0.size):
@@ -48,7 +48,7 @@ def compute_jacobian(theta0, tau, wsp, binning, cfg: RunConfig, beam=None,
 
 
 def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
-               beam=None, nsims_cov=None, n_iter=60, bin_sel=None, eps_x=1e-3, eps_g=1e-2, mu_tau=1e-3, refresh_every=4, refresh_after_tries=3, max_mu_tries = 12):
+               beam=None, nsims_cov=None, n_iter=60, bin_sel=None, eps_x=1e-3, eps_g=1e-2, mu_tau=1e-3, refresh_every=4, refresh_after_tries=3, max_mu_tries = 12, verbose=True):
     """
     Damped LM Broyden fit. 
     'data', 'cov', and 'A' must share the same bins.
@@ -56,6 +56,8 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
     
     Returns dict(values, errors, cov, chi2, dtheta) like likelihood.fit_to_dict.
     """
+    if verbose:
+        print('[response] computing linear fit...')
     data = np.asarray(data, float)
     nbin = data.size
     alpha = hartlap_factor(nsims_cov, nbin) if nsims_cov else 1.0
@@ -140,6 +142,8 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
             converged = True
             break
 
+    if verbose:
+        print('[response] linear fit finished...')
     return dict(values=theta, errors=errs, cov=Finv, chi2=chi2,
                 dtheta=theta - np.asarray(theta0, float), converged = converged)
 

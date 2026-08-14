@@ -54,7 +54,7 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, beam):
     """
 
     cfg = build_config(args, phase_mode=phase_mode)
-    print(f"[validation] config: {cfg.key()}  nsims={cfg.nsims}")
+    print(f"[validation] config: {cfg.key()} , nsims={cfg.nsims}")
     if cfg.phase_mode != "shared":
         print(f"[validation] NOTE: phase_mode='{cfg.phase_mode}' --" 
               f"this is NOT the pipeline null test;"
