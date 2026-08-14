@@ -24,7 +24,7 @@ def model_bandpowers(theta, tau, wsp, binning, cfg: RunConfig, beam=None):
     """
     cosmo = cosmo_from_fit(*theta, tau)
     cl = cosmology_to_cls(cosmo, cfg.lmax_map, cfg.lens_potential_accuracy)
-    return bandpowers_from_theory(cl, wsp, binning, beam=beam)
+    return bandpowers_from_theory(cfg, cl, wsp, binning, beam=beam)
 
 
 def compute_jacobian(theta0, tau, wsp, binning, cfg: RunConfig, beam=None,
@@ -138,6 +138,7 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
         grad = A.T @ Cinv @ (data - D)
         step_ok = np.max(np.abs(delta_lm) / errs) < eps_x
         grad_ok = np.max(np.abs(grad) * errs) < eps_g
+        n_iter = it+1
         if step_ok or grad_ok:
             converged = True
             break
@@ -145,7 +146,7 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
     if verbose:
         print('[response] linear fit finished...')
     return dict(values=theta, errors=errs, cov=Finv, chi2=chi2,
-                dtheta=theta - np.asarray(theta0, float), converged = converged)
+                dtheta=theta - np.asarray(theta0, float), converged = converged, n_iter=n_iter)
 
 
 def fisher_bias(delta_D, cov, A, nsims_cov=None):

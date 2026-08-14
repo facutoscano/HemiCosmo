@@ -70,14 +70,16 @@ def bandpowers_from_map(map_in: np.ndarray, mask: np.ndarray,
     return cl_dec * dl_factor(binning)
 
 
-def bandpowers_from_theory(cl: np.ndarray, wsp: nmt.NmtWorkspace,
+def bandpowers_from_theory(cfg: RunConfig, cl: np.ndarray, wsp: nmt.NmtWorkspace,
                            binning: nmt.NmtBin, beam=None) -> np.ndarray:
     """
     Bin a theory C_l through the same mask coupling -> D_l bandpowers
     """
+    pw = hp.pixwin(cfg.nside, lmax=len(cl)-1)
     clb = cl.copy()
+    clb = clb * pw**2
     if beam is not None:
-        clb = clb * beam ** 2
+        clb = clb * beam**2
     cl_dec = wsp.decouple_cell(wsp.couple_cell([clb]))[0]
     return cl_dec * dl_factor(binning)
 
