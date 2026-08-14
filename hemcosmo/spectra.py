@@ -51,7 +51,7 @@ def get_workspace(mask: np.ndarray, binning: nmt.NmtBin, cfg: RunConfig,
     if verbose:
         print("[spectra] computing mode-coupling matrix...")
     npix = hp.nside2npix(cfg.nside)
-    f0 = nmt.NmtField(mask, [np.zeros(npix)])
+    f0 = nmt.NmtField(mask, [np.zeros(npix)], lmax=binning.lmax)
     wsp.compute_coupling_matrix(f0, f0, binning)
     wsp.write_to(wsp_file)
     if verbose:
@@ -64,7 +64,7 @@ def bandpowers_from_map(map_in: np.ndarray, mask: np.ndarray,
     """
     Decoupled, binned D_l bandpowers of an map
     """
-    field = nmt.NmtField(mask, [map_in])
+    field = nmt.NmtField(mask, [map_in], lmax=binning.lmax)
     cl_coupled = nmt.compute_coupled_cell(field, field)
     cl_dec = wsp.decouple_cell(cl_coupled)[0]
     return cl_dec * dl_factor(binning)
