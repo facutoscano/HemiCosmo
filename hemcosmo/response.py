@@ -139,8 +139,8 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
         step_ok = np.max(np.abs(delta_lm) / errs) < eps_x
         grad_ok = np.max(np.abs(grad) * errs) < eps_g
         n_iter = it+1
-        print(f"[response] iter {it}: |grad*errs|={np.max(np.abs(grad)*errs):.3e}  step_ok={step_ok} grad_ok={grad_ok}")
-        if step_ok or grad_ok:
+        print(f"[response] iter {it}: chi2={chi2:.2f}  |grad*errs|={np.max(np.abs(grad)*errs):.3e}  |dtheta|={np.max(np.abs(delta_lm)):.2e}  mu={mu:.2e}")
+        if grad_ok:
             converged = True
             break
 
