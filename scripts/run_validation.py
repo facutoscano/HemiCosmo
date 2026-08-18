@@ -81,6 +81,9 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, beam):
                          cfg, beam=beam, nsims_cov=cfg.nsims)
         print(f"[response] converged={fit['converged']}  n_iter={fit.get('n_iter','?')}  dtheta={fit['dtheta']}")
 
+    vld = fit.get("valid", "n/a")
+    print(f"[fit] best-fit chi2 = {fit['chi2']:.2f}  (ndof = {nbin - 5})  valid = {vld}")
+
     ## Chi^2 distribution
     cinv = hartlap_factor(cfg.nsims, nbin) * np.linalg.inv(cov)
     resid = sims - Dl_fid
@@ -88,7 +91,7 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, beam):
 
     ndof_param = nbin - 5
     validation_summary(fit["values"], fit["errors"], FIDUCIAL,
-                       chi2_val=np.mean(chi2_null), ndof=nbin)
+                   chi2_val=fit["chi2"], ndof=nbin - 5)
     print(f"\n  null chi^2 (vs fiducial, fixed model): "
           f"mean={chi2_null.mean():.1f} (expect ~{nbin}), "
           f"median={np.median(chi2_null):.1f}, 95%={np.percentile(chi2_null, 95):.1f}")
