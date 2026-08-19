@@ -143,7 +143,7 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
         print(f"[response] iter {it}: chi2={chi2:.2f}  |grad*errs|={np.max(np.abs(grad)*errs):.3e}  |dtheta|={np.max(np.abs(delta_lm)):.2e}  mu={mu:.2e}")
         chi2_converged = abs(chi2_old - chi2) < eps_chi2 * max(1.0, abs(chi2))
 
-        min_iter = 3
+        min_iter = 4
         if it >= min_iter:
             if abs(chi2_old - chi2) < eps_chi2 * max(1.0, abs(chi2)):
                 converged = True

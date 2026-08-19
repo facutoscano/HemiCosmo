@@ -69,7 +69,7 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, beam):
     sigma = np.sqrt(np.diag(cov))
 
     ## Theoretical Jacobian 
-    theta0 = FIDUCIAL.as_vector() * [1.05, 0.98, 1.03, 0.99, 1.02]
+    theta0 = FIDUCIAL.as_vector()
     Dl_fid, A = compute_jacobian(theta0, FIDUCIAL.tau, wsp, binning, cfg, beam)
 
     ## Fit the mean bandpowers

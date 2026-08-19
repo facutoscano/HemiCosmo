@@ -67,31 +67,62 @@ def validation_summary(fit_values, fit_errors, truth: Cosmology,
 
 
 def bias_summary(fit_values, fit_errors, north: Cosmology, south: Cosmology,
-                 fiducial: Cosmology, chi2_val, ndof):
+                 fiducial: Cosmology, chi2_val, ndof,
+                 baseline_values=None, baseline_errors=None,
+                 baseline_label='Null baseline'):
     """
     Asymmetric test: report the effective full-sky fit and its bias
     """
     n_vec, s_vec = north.as_vector(), south.as_vector()
     mid = 0.5 * (n_vec + s_vec)
     fid = fiducial.as_vector()
-    bias = fit_values - fid
-    bias_sig = bias / fit_errors
+    bias_fid = fit_values - fid
+    bias_fid_sig = bias_fid / fit_errors
 
-    print_param_table(
-        [(f"North truth ({north.name})", n_vec),
-         (f"South truth ({south.name})", s_vec),
-         ("Naive midpoint (N+S)/2", mid),
-         (f"Fiducial ({fiducial.name})", fid),
-         ("Effective full-sky fit", fit_values),
-         ("Hesse error", fit_errors),
-         ("Bias  (fit - fiducial)", bias),
-         ("Bias / sigma", bias_sig)],
-        title="ASYMMETRIC SKY: EFFECTIVE PARAMETERS & BIAS")
+    rows = [(f"North truth ({north.name})", n_vec),
+            (f"South truth ({south.name})", s_vec),
+            ("Naive midpoint (N+S)/2", mid),
+            (f"Fiducial ({fiducial.name})", fid)]
+
+    have_baseline = baseline_values is not None
+    if have_baseline:
+        rows.append((baseline_label, baseline_values))
+
+    rows += [("Effective full-sky fit", fit_values),
+             ("Hesse error", fit_errors),
+             ("Bias (fit - fiducial)", bias_fid),
+             ("Bias/sigmal (vs fiducial)", bias_fid_sig)]
+
+    if have_baseline:
+        bias_base = fit_values - baseline_values
+        sigma_comb = np.sqrt(fit_errors**2 + baseline_errors**2)
+        bias_base_sig = np.divide(
+            bias_base, sigma_comb,
+            out=np.full_like(bias_base, np.nan), where=sigma_comb > 0)
+        rows += [("Bias (fit- baseline)", bias_base),
+        ("Bias/sigma (vs baseline)", bias_base_sig)]
+
+    print_param_table(rows, title="ASYMMETRIC SKY: EFFECTIVE PARAMETERS & BIAS")
     print(f"\n  fit chi^2 = {chi2_val:.2f}   ndof = {ndof}   "
           f"chi^2/ndof = {chi2_val / ndof:.2f}   PTE = {pte(chi2_val, ndof):.3f}")
-    imax = int(np.argmax(np.abs(bias_sig)))
-    print(f"  largest bias: {PARAM_NAMES[imax]} at {bias_sig[imax]:+.2f} sigma")
-    return dict(bias=bias, bias_sig=bias_sig, chi2=chi2_val, ndof=ndof)
+
+    if have_baseline:
+        imax_b = int(np.nanargmax(np.abs(bias_vs_base_sig)))
+        imax_f = int(np.argmax(np.abs(bias_vs_fid_sig)))
+        print(f"  largest bias vs BASELINE: {PARAM_NAMES[imax_b]} at "
+              f"{bias_vs_base_sig[imax_b]:+.2f} sigma  <- use this one")
+        print(f"  (naive bias vs raw fiducial would have read "
+              f"{PARAM_NAMES[imax_f]} at {bias_vs_fid_sig[imax_f]:+.2f} sigma; "
+              f"the gap is the stitching systematic, not the N/S asymmetry)")
+        return dict(bias=bias_vs_base, bias_sig=bias_vs_base_sig,
+                    bias_vs_fid=bias_vs_fid, bias_vs_fid_sig=bias_vs_fid_sig,
+                    chi2=chi2_val, ndof=ndof)
+
+    imax = int(np.argmax(np.abs(bias_vs_fid_sig)))
+    print(f"  largest bias: {PARAM_NAMES[imax]} at {bias_vs_fid_sig[imax]:+.2f} sigma")
+    print("  WARNING: no phase_mode-matched baseline was supplied -- this bias "
+          "conflates the N/S asymmetry with the hemisphere-stitching systematic.")
+    return dict(bias=bias_vs_fid, bias_sig=bias_vs_fid_sig, chi2=chi2_val, ndof=ndof)
 
 
 def hypothesis_test(chi2_null_dist, chi2_obs, label=""):
