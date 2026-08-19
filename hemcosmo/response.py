@@ -48,7 +48,7 @@ def compute_jacobian(theta0, tau, wsp, binning, cfg: RunConfig, beam=None,
 
 
 def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
-               beam=None, nsims_cov=None, n_iter=60, bin_sel=None, eps_x=1e-3, eps_g=1e-2, mu_tau=1e-3, refresh_every=4, refresh_after_tries=3, max_mu_tries = 12, verbose=True):
+               beam=None, nsims_cov=None, n_iter=60, bin_sel=None, eps_x=1e-3, eps_g=1e-2, mu_tau=1e-3, eps_chi2 = 1e-4, refresh_every=4, refresh_after_tries=3, max_mu_tries = 12, verbose=True):
     """
     Damped LM Broyden fit. 
     'data', 'cov', and 'A' must share the same bins.
@@ -74,6 +74,7 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
     chi2 = float((data - D) @ Cinv @ (data - D))
     F = (A.T @ Cinv @ A)
     mu = mu_tau * np.max(np.diag(F))
+    mu_max = 1e6 * mu
     nu = 2.0
     F_damped = F + mu * np.diag(np.diag(F))
     Finv = np.linalg.inv(F_damped)
@@ -86,6 +87,7 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
             _, A = compute_jacobian(theta, tau, wsp, binning, cfg, beam, steps=DEFAULT_STEPS, verbose=False)
         accepted = False
         converged = False
+        chi2_old = chi2
 
         for bt in range(max_mu_tries):
             if bt == refresh_after_tries:
@@ -136,18 +138,30 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
         Finv = np.linalg.inv(F_final)
         errs = np.sqrt(np.diag(Finv))
         grad = A.T @ Cinv @ (data - D)
-        step_ok = np.max(np.abs(delta_lm) / errs) < eps_x
         grad_ok = np.max(np.abs(grad) * errs) < eps_g
         n_iter = it+1
         print(f"[response] iter {it}: chi2={chi2:.2f}  |grad*errs|={np.max(np.abs(grad)*errs):.3e}  |dtheta|={np.max(np.abs(delta_lm)):.2e}  mu={mu:.2e}")
+        if abs(chi2_old - chi2) < eps_chi2 * max(1.0, abs(chi2)):
+            converged = True
+            break
         if grad_ok:
             converged = True
             break
+        if mu > mu_max:
+            converged = True
+            break
+
+    F_clean = A.T @ Cinv @ A
+    try:
+        Finv = np.linalg.inv(F_clean)
+        errs = np.sqrt(np.diag(Finv))
+    except np.linalg.LinAlgError:
+        pass
 
     if verbose:
         print('[response] linear fit finished...')
     return dict(values=theta, errors=errs, cov=Finv, chi2=chi2,
-                dtheta=theta - np.asarray(theta0, float), converged = converged, n_iter=n_iter)
+                dtheta=theta - np.asarray(theta0, float), converged=converged, n_iter=n_iter)
 
 
 def fisher_bias(delta_D, cov, A, nsims_cov=None):
