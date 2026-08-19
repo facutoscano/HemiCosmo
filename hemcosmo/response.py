@@ -48,7 +48,7 @@ def compute_jacobian(theta0, tau, wsp, binning, cfg: RunConfig, beam=None,
 
 
 def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
-               beam=None, nsims_cov=None, n_iter=60, bin_sel=None, eps_x=1e-3, eps_g=1e-2, mu_tau=1e-3, eps_chi2 = 1e-4, refresh_every=4, refresh_after_tries=3, max_mu_tries = 12, verbose=True):
+               beam=None, nsims_cov=None, n_iter=60, bin_sel=None, eps_x=1e-3, eps_g=1e-2, mu_tau=1e-4, eps_chi2 = 1e-4, refresh_every=4, refresh_after_tries=3, max_mu_tries = 12, verbose=True):
     """
     Damped LM Broyden fit. 
     'data', 'cov', and 'A' must share the same bins.
@@ -141,12 +141,16 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
         grad_ok = np.max(np.abs(grad) * errs) < eps_g
         n_iter = it+1
         print(f"[response] iter {it}: chi2={chi2:.2f}  |grad*errs|={np.max(np.abs(grad)*errs):.3e}  |dtheta|={np.max(np.abs(delta_lm)):.2e}  mu={mu:.2e}")
-        if abs(chi2_old - chi2) < eps_chi2 * max(1.0, abs(chi2)):
-            converged = True
-            break
-        if grad_ok:
-            converged = True
-            break
+        chi2_converged = abs(chi2_old - chi2) < eps_chi2 * max(1.0, abs(chi2))
+
+        min_iter = 3
+        if it >= min_iter:
+            if abs(chi2_old - chi2) < eps_chi2 * max(1.0, abs(chi2)):
+                converged = True
+                break
+            if grad_ok:
+                converged = True
+                break
         if mu > mu_max:
             converged = True
             break
