@@ -107,7 +107,7 @@ def main(args):
                  chi2_val=sys_chi2, ndof=ndof_param,
                  baseline_values = null_fit['values'],
                  baseline_errors=null_fit['errors'],
-                 baseline_label=f"Null baseline (phase_mode='{cfg.phase_mode}')")
+                 baseline_label=f"Null baseline ')")
 
     # --- detectability: does the mixed sky reject the fiducial full-sky model? ---
     rn = null_sims - Dl_fid
