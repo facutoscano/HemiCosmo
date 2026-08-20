@@ -141,7 +141,7 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, sel, beam):
                 mean_null=mean_null, cov=cov, sigma=sigma, 
                 ells=ells, nbin=nbin)
 
-def compare_phase_modes(args, mask, binning, wsp, beam):
+def compare_phase_modes(args, mask, binning, wsp, sel, beam):
     """
     Run both phase_mode branches and report the parameter shift
     """

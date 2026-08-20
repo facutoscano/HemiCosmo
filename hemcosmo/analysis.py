@@ -124,6 +124,21 @@ def bias_summary(fit_values, fit_errors, north: Cosmology, south: Cosmology,
           "conflates the N/S asymmetry with the hemisphere-stitching systematic.")
     return dict(bias=bias_fid, bias_sig=bias_fid_sig, chi2=chi2_val, ndof=ndof)
 
+def linear_estimator(cov, A, nsims_cov=None):
+    """
+    Frozen linear (Fisher) estimator operator
+    """
+    A = np.asarray(A, float)
+    nbin = A.shape[0]
+    alpha = 1.0
+    if nsims_cov is not None:
+        alpha = (nsims_cov - nbin - 2) / (nsims_cov - 1)   # Hartlap
+    Cinv = alpha * np.linalg.inv(cov)
+    F = A.T @ Cinv @ A
+    Finv = np.linalg.inv(F)
+    M = Finv @ A.T @ Cinv
+    hesse = np.sqrt(np.diag(Finv))
+    return dict(M=M, hesse=hesse, Finv=Finv, Cinv=Cinv, alpha=alpha, F=F)
 
 def hypothesis_test(chi2_null_dist, chi2_obs, label=""):
     """
@@ -158,13 +173,12 @@ def frequentist_validation(sims, cov, theta0, A, D0, truth_vec,
 
     F = A.T @ Cinv @ A
     Finv = np.linalg.inv(F)
-    hesse = np.sqrt(np.diag(Finv))          # Fisher 1-sky error (same for every sim)
-    M = Finv @ A.T @ Cinv                   
-
-    # per-sim best fits, vectorized: theta_hat_k = theta0 + M (d_k - D0)
-    resid = sims - D0[None, :]              
-    fits = theta0[None, :] + resid @ M.T    
-
+    
+    est = linear_estimator(cov, A, nsims_cov)
+    Cinv, M, hesse = est["Cinv"], est["M"], est["hesse"]
+    resid = sims - D0[None, :]
+    fits = theta0[None, :] + resid @ M.T
+    
     mean_fit = fits.mean(axis=0)
     std_fit = fits.std(axis=0, ddof=1)       # empirical one-sky scatter
     bias_1sky = (mean_fit - truth_vec) / hesse                 # bias in 1-sky sigma

@@ -26,7 +26,7 @@ def make_binning(cfg: RunConfig) -> nmt.NmtBin:
     Uniform-width binning from lmin to lmax
     """
     edges = np.arange(cfg.lmin, cfg.lmax_maps + 1, cfg.delta_l)
-    if edges[-1] < cfg.lmax + 1:
+    if edges[-1] < cfg.lmax_maps + 1:
         edges = np.append(edges, cfg.lmax_maps + 1)
     return nmt.NmtBin.from_edges(edges[:-1], edges[1:])
 
