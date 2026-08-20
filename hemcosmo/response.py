@@ -85,6 +85,8 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
     for it in range(n_iter):
         if it > 0 and it % refresh_every == 0:
             _, A = compute_jacobian(theta, tau, wsp, binning, cfg, beam, steps=DEFAULT_STEPS, verbose=False)
+            if bin_sel is not None:
+                A = A[bin_sel]
         accepted = False
         converged = False
         chi2_old = chi2
@@ -92,6 +94,8 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
         for bt in range(max_mu_tries):
             if bt == refresh_after_tries:
                 _, A = compute_jacobian(theta, tau, wsp, binning, cfg, beam, steps=DEFAULT_STEPS, verbose=False)
+                if bin_sel is not None:
+                    A = A[bin_sel]
 
             F = A.T @ Cinv @ A
             F_damped = F + mu * np.diag(np.diag(F))
