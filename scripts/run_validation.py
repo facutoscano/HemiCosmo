@@ -46,7 +46,7 @@ def compute_geometry(cfg: RunConfig):
     wsp = get_workspace(mask, binning, cfg)
     sel = analysis_bin_sel(binning, cfg)        # effective_ell <= lmax_analysis
     beam = transfer_function(cfg)
-    return mask, binning, wsp, beam
+    return mask, binning, wsp, sel, beam
 
 def run_phase_mode(phase_mode, args, mask, binning, wsp, sel, beam):
     """
