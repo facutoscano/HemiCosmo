@@ -72,6 +72,15 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, beam):
     theta0 = FIDUCIAL.as_vector()
     Dl_fid, A = compute_jacobian(theta0, FIDUCIAL.tau, wsp, binning, cfg, beam)
 
+    #######################
+    fit_selftest = linear_fit(Dl_fid, cov, theta0, A, FIDUCIAL.tau, wsp, binning,
+                          cfg, beam=beam, nsims_cov=cfg.nsims)
+    print("[SELFTEST] fit to Dl_fid (should recover fiducial exactly):")
+    print("  recovered:", fit_selftest["values"])
+    print("  fiducial :", FIDUCIAL.as_vector())
+    print("  diff/err :", (fit_selftest["values"]-FIDUCIAL.as_vector())/fit_selftest["errors"])
+    #######################
+
     ## Fit the mean bandpowers
     if args.minuit:
         fit = fit_to_dict(fit_bandpowers(mean_null, cov, wsp, binning, cfg,
