@@ -148,6 +148,11 @@ def main(args):
         os.path.join(cfg.results_dir, f"asym_global_vs_hemis_{tag}_{cfg.key()}.png"),
         fid_vec=FIDUCIAL.as_vector(),
         title=f"Global full-sky fit vs hemisphere inputs  (N={north.name}, S={south.name})")
+    plots.plot_chi2_detectability(
+        chi2_null, chi2_asym,
+        os.path.join(cfg.results_dir, f"asym_chi2_{tag}_{cfg.key()}.png"),
+        ndof=int(nbin-5), title=f"Detectability N={north.name}/S={south.name}",
+        label_asym=f"N={north.name}/S={south.name}")
 
 
 if __name__ == "__main__":

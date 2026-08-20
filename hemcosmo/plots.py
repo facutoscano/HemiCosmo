@@ -162,3 +162,42 @@ def plot_phase_mode_comparison(values_shared, errors_shared, values_indep,
     fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
     print(f"[plots] saved {outpath}")
+
+def plot_chi2_detectability(chi2_null, chi2_asym, outpath, ndof=None,
+                            title="", label_asym="mixed sky"):
+    """
+    Null chi^2 distribution (A=B=fiducial) with the
+    asymmetric-sky chi^2 distribution overlaid. The 95% null limit marks the
+    rejection threshold; detection power is the fraction of mixed skies above it.
+    """
+    chi2_null = np.asarray(chi2_null).ravel()
+    chi2_asym = np.asarray(chi2_asym).ravel()
+    lim95 = np.percentile(chi2_null, 95)
+    power = float(np.mean(chi2_asym > lim95))
+
+    lo = min(chi2_null.min(), chi2_asym.min())
+    hi = max(chi2_null.max(), chi2_asym.max())
+    bins = np.linspace(lo, hi, 40)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.hist(chi2_null, bins=bins, density=True, alpha=0.55, color="#1d6fb8",
+            label="null (A=B=fiducial)")
+    ax.hist(chi2_asym, bins=bins, density=True, alpha=0.55, color="#c1121f",
+            label=label_asym)
+    ax.axvline(lim95, color="k", ls="--", lw=1.5,
+               label=rf"null 95% = {lim95:.0f}")
+    ax.axvline(np.median(chi2_asym), color="#c1121f", ls=":", lw=1.5,
+               label=rf"median {label_asym} = {np.median(chi2_asym):.0f}")
+    if ndof is not None:
+        from scipy.stats import chi2 as _c2
+        xx = np.linspace(lo, hi, 400)
+        ax.plot(xx, _c2.pdf(xx, df=ndof), "k-", lw=1, alpha=0.6,
+                label=rf"$\chi^2_{{{ndof}}}$ (theory)")
+    ax.set_xlabel(r"$\chi^2$ vs assumed fiducial")
+    ax.set_ylabel("density")
+    ax.set_title((title + f"\ndetection power @95% = {power:.2f}").strip())
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+    fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[plots] saved {outpath}")

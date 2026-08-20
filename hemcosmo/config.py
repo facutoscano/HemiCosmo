@@ -108,7 +108,7 @@ class RunConfig:
     nside: int = 2048
     delta_l: int = 30
     lmin: int = 32
-    lmax: int = None          # defaults to 3*nside-1
+    lmax: int = None          # defaults to 2*nside
     apod_deg: float = 1.0     # apodization of the common mask (deg)
     blend_width_deg: float = 5.0   # tanh transition half-width at b=0 (deg)
     beam_fwhm_deg: float = 0.0     # optional Gaussian beam (deg); 0 = no beam
@@ -125,14 +125,14 @@ class RunConfig:
     lmax_map: int = field(init=False, default=0)
 
     def __post_init__(self):
-        # Maps are synthesised to the full band (3*nside-1) to avoid aliasing, but the analysis binning is capped at ~2*nside.
+        # Maps are synthesised to the full band (3*nside-1) to avoid aliasing, but the analysis binning is capped at 1.5*nside.
         self.lmax_map = 3 * self.nside - 1
-        lmax_safe = 2 * self.nside
+        lmax_safe = int(1.5 * self.nside)
         if self.lmax is None:
             self.lmax = lmax_safe
         elif self.lmax > lmax_safe:
-            print(f"[config] WARNING: lmax={self.lmax} > 2*nside={lmax_safe}; "
-                  "bandpowers above 2*nside are pixelization-biased.")
+            print(f"[config] WARNING: lmax={self.lmax} > 1.5*nside={lmax_safe}; "
+                  "bandpowers above ~1.5*nside carry pixel-window residuals that bias the results.")
             self.lmax = min(self.lmax, self.lmax_map)
         os.makedirs(self.results_dir, exist_ok=True)
         os.makedirs(self.cache_dir, exist_ok=True)
