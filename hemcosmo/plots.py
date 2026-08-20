@@ -201,3 +201,31 @@ def plot_chi2_detectability(chi2_null, chi2_asym, outpath, ndof=None,
     fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
     print(f"[plots] saved {outpath}")
+
+def plot_fit_distribution(fits, truth_vec, hesse, outpath, title=""):
+    """
+    One panel per parameter: histogram of the per-sim best-fits, with the
+    input truth (dashed) and the +/-1 Hesse band (shaded) overlaid. 
+    """
+    fits = np.asarray(fits, float)
+    n = len(PARAM_LABELS)
+    fig, axes = plt.subplots(1, n, figsize=(2.6 * n, 3.8))
+    for i, ax in enumerate(axes):
+        col = fits[:, i]
+        ax.hist(col, bins=30, density=True, color="0.6", alpha=0.7)
+        ax.axvline(truth_vec[i], color="k", ls="--", lw=1.5, label="truth")
+        ax.axvline(col.mean(), color="#c1121f", lw=1.5, label="mean fit")
+        ax.axvspan(truth_vec[i] - hesse[i], truth_vec[i] + hesse[i],
+                   color="#1d6fb8", alpha=0.15, label=r"$\pm1\sigma_{\rm Hesse}$")
+        ax.set_title(PARAM_LABELS[i], fontsize=10)
+        ax.set_yticks([])
+        ax.text(0.05, 0.95, f"emp={col.std(ddof=1):.3g}\nHes={hesse[i]:.3g}",
+                transform=ax.transAxes, va="top", fontsize=7,
+                bbox=dict(boxstyle="round", fc="white", alpha=0.7))
+    axes[0].legend(fontsize=7, loc="lower left")
+    if title:
+        fig.suptitle(title)
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[plots] saved {outpath}")

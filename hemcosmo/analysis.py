@@ -137,3 +137,69 @@ def hypothesis_test(chi2_null_dist, chi2_obs, label=""):
     print(f"\n  [{label}] chi2_obs = {chi2_obs:.2f}   "
           f"null 95% limit = {lim95:.2f}   p_emp = {p_emp:.3f}  ->  {verdict}")
     return dict(chi2_obs=chi2_obs, lim95=lim95, p_emp=p_emp)
+
+def frequentist_validation(sims, cov, theta0, A, D0, truth_vec,
+                           nsims_cov=None, param_names=None):
+    """
+    Frequentist null test: fit every simulation individually with a FROZEN
+    linear estimator and study the distribution of best-fits.
+    """
+
+    sims = np.asarray(sims, float)
+    nsims, nbin = sims.shape
+    theta0 = np.asarray(theta0, float)
+    truth_vec = np.asarray(truth_vec, float)
+    names = param_names if param_names is not None else PARAM_NAMES
+
+    alpha = 1.0
+    if nsims_cov is not None:
+        alpha = (nsims_cov - nbin - 2) / (nsims_cov - 1)   # Hartlap
+    Cinv = alpha * np.linalg.inv(cov)
+
+    F = A.T @ Cinv @ A
+    Finv = np.linalg.inv(F)
+    hesse = np.sqrt(np.diag(Finv))          # Fisher 1-sky error (same for every sim)
+    M = Finv @ A.T @ Cinv                   
+
+    # per-sim best fits, vectorized: theta_hat_k = theta0 + M (d_k - D0)
+    resid = sims - D0[None, :]              
+    fits = theta0[None, :] + resid @ M.T    
+
+    mean_fit = fits.mean(axis=0)
+    std_fit = fits.std(axis=0, ddof=1)       # empirical one-sky scatter
+    bias_1sky = (mean_fit - truth_vec) / hesse                 # bias in 1-sky sigma
+    bias_onmean = (mean_fit - truth_vec) / (hesse / np.sqrt(nsims))  # bias vs error-on-mean
+    z = (fits - truth_vec[None, :]) / hesse[None, :]           # per-sim pulls
+    z_mean = z.mean(axis=0)
+    z_std = z.std(axis=0, ddof=1)
+    hesse_ratio = hesse / std_fit            # Fisher error vs empirical scatter
+
+    width = 92
+    print("\n" + "=" * width)
+    print("FREQUENTIST NULL TEST: per-sim fits (frozen linear estimator)".center(width))
+    print("-" * width)
+    print(f"  nsims = {nsims}   nbin = {nbin}   Hartlap alpha = {alpha:.4f}")
+    print(f"\n  {'param':>8} | {'mean_fit':>11} {'truth':>11} | "
+          f"{'pull mean':>9} {'pull std':>8} | {'Hesse/emp':>9}")
+    print("  " + "-" * (width - 4))
+    for i, n in enumerate(names):
+        print(f"  {n:>8} | {mean_fit[i]:>11.5g} {truth_vec[i]:>11.5g} | "
+              f"{z_mean[i]:>+9.2f} {z_std[i]:>8.2f} | {hesse_ratio[i]:>9.2f}")
+    print("  " + "-" * (width - 4))
+    print(f"\n  interpretation:")
+    print(f"    pull mean ~ 0  -> estimator unbiased at the ONE-SKY level  "
+          f"(max |mean| = {np.max(np.abs(z_mean)):.2f})")
+    print(f"    pull std  ~ 1  -> Hesse error is a faithful 1-sky bar       "
+          f"(range {z_std.min():.2f}-{z_std.max():.2f})")
+    print(f"    Hesse/emp ~ 1  -> Fisher error matches empirical scatter    "
+          f"(range {hesse_ratio.min():.2f}-{hesse_ratio.max():.2f})")
+    ok_bias = np.max(np.abs(z_mean)) < 0.3
+    print(f"\n  one-sky bias verdict: "
+          f"{'OK (unbiased for a single sky)' if ok_bias else 'CHECK (residual one-sky bias)'}")
+    print(f"  (for reference, bias vs error-on-the-mean would read up to "
+          f"{np.max(np.abs(bias_onmean)):.1f} sigma -- the wrong, over-magnified test)")
+    print("=" * width)
+
+    return dict(fits=fits, mean_fit=mean_fit, std_fit=std_fit, hesse=hesse,
+                z=z, z_mean=z_mean, z_std=z_std, hesse_ratio=hesse_ratio,
+                bias_1sky=bias_1sky, bias_onmean=bias_onmean, truth=truth_vec)

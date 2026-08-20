@@ -26,7 +26,7 @@ from hemcosmo.spectra import (make_binning, get_workspace, bandpowers_from_theor
 from hemcosmo.sims import get_or_generate_sims, covariance
 from hemcosmo.likelihood import fit_bandpowers, fit_to_dict, hartlap_factor
 from hemcosmo.response import compute_jacobian, linear_fit
-from hemcosmo.analysis import validation_summary
+from hemcosmo.analysis import validation_summary, frequentist_validation
 from hemcosmo import plots
 
 
@@ -106,12 +106,23 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, beam):
           f"median={np.median(chi2_null):.1f}, 95%={np.percentile(chi2_null, 95):.1f}")
     print(f"  (param-recovery fit uses ndof = nbin - 5 = {ndof_param})")
 
+    # Frequentist null test: fit each sim individually, frozen Jacobian
+
+    freq = frequentist_validation(sims, cov, theta0, A, Dl_fid,
+                                  FIDUCIAL.as_vector(), nsims_cov=cfg.nsims)
+    plots.plot_fit_distribution(
+        freq["fits"], FIDUCIAL.as_vector(), freq["hesse"],
+        os.path.join(cfg.results_dir, f"validation_fitdist_{cfg.key()}.png"),
+        title=f"Per-sim fit distribution ({cfg.phase_mode})")
+
     ## Saving & Plotting
     out = os.path.join(cfg.results_dir, f"validation_{cfg.key()}.npz")
     np.savez_compressed(out, ells=ells, mean_null=mean_null, cov=cov,
                         Dl_fid=Dl_fid, chi2_null=chi2_null,
                         fit_values=fit["values"], fit_errors=fit["errors"],
-                        param_cov=fit["cov"], nsims=cfg.nsims)
+                        param_cov=fit["cov"], nsims=cfg.nsims, 
+                        freq_fit = freq['fits'], freq_zmean = freq['z_mean'],
+                        freq_zstd = freq['z_std'], freq_hesse = freq['hesse_ratio'])
     print(f"\n[validation] saved {out}")
 
     best_cosmo = cosmo_from_fit(*fit["values"], FIDUCIAL.tau)
