@@ -80,7 +80,7 @@ def transfer_function(cfg: RunConfig) -> np.ndarray:
     The maps are generated with 'pixwin=True', so including the same pixel window in the theory is necessary. 
     Real Planck maps carry the same pixel window, so this is also the physically correct model
     """
-    tl = hp.pixwin(cfg.nside, lmax=cfg.lmax_map)
+    tl = hp.pixwin(cfg.nside, lmax=cfg.lmax_synth)
     if cfg.beam_fwhm_deg > 0:
         tl = tl * hp.gauss_beam(np.radians(cfg.beam_fwhm_deg), lmax=cfg.lmax_synth)
     return tl
