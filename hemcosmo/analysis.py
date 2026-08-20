@@ -203,3 +203,65 @@ def frequentist_validation(sims, cov, theta0, A, D0, truth_vec,
     return dict(fits=fits, mean_fit=mean_fit, std_fit=std_fit, hesse=hesse,
                 z=z, z_mean=z_mean, z_std=z_std, hesse_ratio=hesse_ratio,
                 bias_1sky=bias_1sky, bias_onmean=bias_onmean, truth=truth_vec)
+
+def frequentist_asymmetry(null_sims, asym_sims, cov, theta0, A, D0,
+                          north_vec, south_vec, fiducial_vec,
+                          nsims_cov=None, param_names=None):
+    """
+    Frequentist asymmetric-sky bias: apply the frozen linear estimator to every
+    null (A=B=fiducial) and every mixed-sky realization, and study the
+    distribution of effective full-sky parameters and of the induced bias.
+    """
+    null_sims = np.asarray(null_sims, float)
+    asym_sims = np.asarray(asym_sims, float)
+    theta0 = np.asarray(theta0, float)
+    D0 = np.asarray(D0, float)
+    names = param_names or PARAM_NAMES
+
+    est = linear_estimator(cov, A, nsims_cov)
+    M, hesse = est["M"], est["hesse"]
+
+    fits_null = theta0[None, :] + (null_sims - D0[None, :]) @ M.T
+    fits_asym = theta0[None, :] + (asym_sims - D0[None, :]) @ M.T
+
+    mean_null_fit = fits_null.mean(0)
+    mean_asym_fit = fits_asym.mean(0)
+    sigma_null = fits_null.std(0, ddof=1)          # one-sky scatter (null)
+    sigma_asym = fits_asym.std(0, ddof=1)
+
+    b0 = mean_asym_fit - mean_null_fit             # central effective bias (baseline-subtracted)
+
+    n = min(len(fits_null), len(fits_asym))
+    b_paired = fits_asym[:n] - fits_null[:n]
+    sigma_pair = b_paired.std(0, ddof=1)
+    err_mean = sigma_pair / np.sqrt(n)
+
+    det_persky = np.divide(b0, sigma_null, out=np.full_like(b0, np.nan), where=sigma_null > 0)
+    sig_mean = np.divide(b0, err_mean, out=np.full_like(b0, np.nan), where=err_mean > 0)
+
+    width = 100
+    print("\n" + "=" * width)
+    print("FREQUENTIST ASYMMETRY: per-sim effective parameters & bias".center(width))
+    print("-" * width)
+    print(f"  nsims = {n}   (frozen linear estimator at fiducial)")
+    print(f"\n  {'param':>8} | {'mean_asym':>11} {'mean_null':>11} | "
+          f"{'bias b0':>11} | {'per-sky':>8} | {'mean-eff':>9}")
+    print(f"  {'':>8} | {'(effective)':>11} {'(baseline)':>11} | "
+          f"{'(a - n)':>11} | {'b0/s_null':>8} | {'b0/errmean':>9}")
+    print("  " + "-" * (width - 4))
+    for i, nm in enumerate(names):
+        print(f"  {nm:>8} | {mean_asym_fit[i]:>11.5g} {mean_null_fit[i]:>11.5g} | "
+              f"{b0[i]:>+11.4g} | {det_persky[i]:>+8.2f} | {sig_mean[i]:>+9.1f}")
+    print("  " + "-" * (width - 4))
+    ip = int(np.nanargmax(np.abs(det_persky)))
+    print(f"\n  strongest PER-SKY bias: {names[ip]} at {det_persky[ip]:+.2f} null-sky-sigma")
+    print(f"     -> this is the honest 'would one observed sky see it' number.")
+    print(f"  (mean-effect significance up to {np.nanmax(np.abs(sig_mean)):.0f} sigma -- "
+          f"says the effect EXISTS in the ensemble, grows with sqrt(N), not a per-sky detection)")
+    print("=" * width)
+
+    return dict(fits_null=fits_null, fits_asym=fits_asym,
+                mean_null_fit=mean_null_fit, mean_asym_fit=mean_asym_fit,
+                sigma_null=sigma_null, sigma_asym=sigma_asym,
+                b0=b0, sigma_pair=sigma_pair, err_mean=err_mean,
+                det_persky=det_persky, sig_mean=sig_mean, hesse=hesse)

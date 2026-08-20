@@ -108,7 +108,8 @@ class RunConfig:
     nside: int = 2048
     delta_l: int = 30
     lmin: int = 32
-    lmax: int = None          # defaults to 2*nside
+    lmax_maps: int = None          # defaults to 2*nside
+    lmax_analysis: int = None      # bins used in the fit, default 1.5*nside
     apod_deg: float = 1.0     # apodization of the common mask (deg)
     blend_width_deg: float = 5.0   # tanh transition half-width at b=0 (deg)
     beam_fwhm_deg: float = 0.0     # optional Gaussian beam (deg); 0 = no beam
@@ -122,18 +123,24 @@ class RunConfig:
     cache_dir: str = CACHE_DIR
     seed: int = 1234
 
-    lmax_map: int = field(init=False, default=0)
+    lmax_synth: int = field(init=False, default=0)
 
     def __post_init__(self):
         # Maps are synthesised to the full band (3*nside-1) to avoid aliasing, but the analysis binning is capped at 1.5*nside.
-        self.lmax_map = 3 * self.nside - 1
-        lmax_safe = int(1.5 * self.nside)
-        if self.lmax is None:
-            self.lmax = lmax_safe
-        elif self.lmax > lmax_safe:
-            print(f"[config] WARNING: lmax={self.lmax} > 1.5*nside={lmax_safe}; "
-                  "bandpowers above ~1.5*nside carry pixel-window residuals that bias the results.")
-            self.lmax = min(self.lmax, self.lmax_map)
+        self.lmax_synth = 3 * self.nside - 1
+        if self.lmax_maps is None:
+            self.lmax_maps = int(2. * self.nside)
+        if self.lmax_analysis is None:
+            self.lmax_analysis = int(1.5 * self.nside)
+        if self.lmax_analysis > self.lmax_maps:
+            raise ValueError(
+                f"lmax_analysis ({self.lmax_analysis}) must be <= lmax_maps "
+                f"({self.lmax_maps}); the analysis cut needs workspace bins above "
+                f"it to absorb the mode-coupling edge effect.")
+        if self.lmax_maps > self.lmax_synth:
+            print(f"[config] WARNING: lmax_maps={self.lmax_maps} > 3*nside-1="
+                  f"{self.lmax_synth}; capping at the synthesis band.")
+            self.lmax_maps = self.lmax_synth
         os.makedirs(self.results_dir, exist_ok=True)
         os.makedirs(self.cache_dir, exist_ok=True)
 
@@ -142,8 +149,9 @@ class RunConfig:
         Mask/binning geometry fingerprint (independent of phase_mode)
         """
         return (f"ns{self.nside}_dl{self.delta_l}_lmin{self.lmin}"
-                f"_lmax{self.lmax}_apod{self.apod_deg:g}"
-                f"_blend{self.blend_width_deg:g}_beam{self.beam_fwhm_deg:g}")
+                f"_lmaxM{self.lmax_maps}_lmaxA{self.lmax_analysis}"
+                f"_apod{self.apod_deg:g}_blend{self.blend_width_deg:g}"
+                f"_beam{self.beam_fwhm_deg:g}")
 
     def key(self) -> str:
         """

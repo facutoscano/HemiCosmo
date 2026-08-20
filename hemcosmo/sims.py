@@ -60,9 +60,9 @@ def _one_bandpower(cfg, mask, wsp, binning, Wn, Ws, cl_n, cl_s, fwhm,
     Compute the D_l bandpowers of a single composite realization
     """
     np.random.seed(seed_n)
-    m_n = hp.synfast(cl_n, cfg.nside, lmax=cfg.lmax_map, pixwin=True, new=True)
+    m_n = hp.synfast(cl_n, cfg.nside, lmax=cfg.lmax_synth, pixwin=True, new=True)
     np.random.seed(seed_s)
-    m_s = hp.synfast(cl_s, cfg.nside, lmax=cfg.lmax_map, pixwin=True, new=True)
+    m_s = hp.synfast(cl_s, cfg.nside, lmax=cfg.lmax_synth, pixwin=True, new=True)
     comp = Wn * m_n + Ws * m_s
     if fwhm > 0:
         comp = hp.smoothing(comp, fwhm=fwhm)
@@ -119,8 +119,8 @@ def get_or_generate_sims(nsims: int, north: Cosmology, south: Cosmology,
         return all_Cb[:nsims]
 
     n_new = nsims - n_have
-    cl_n = cosmology_to_cls(north, cfg.lmax_map, cfg.lens_potential_accuracy)
-    cl_s = cosmology_to_cls(south, cfg.lmax_map, cfg.lens_potential_accuracy)
+    cl_n = cosmology_to_cls(north, cfg.lmax_synth, cfg.lens_potential_accuracy)
+    cl_s = cosmology_to_cls(south, cfg.lmax_synth, cfg.lens_potential_accuracy)
     seeds = _make_seeds(cfg, n_new, offset=n_have)
     tasks = [(i, sn, ss) for i, (sn, ss) in enumerate(seeds)]
     workers = min(resolve_workers(cfg), n_new)

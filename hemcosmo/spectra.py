@@ -25,11 +25,16 @@ def make_binning(cfg: RunConfig) -> nmt.NmtBin:
     """
     Uniform-width binning from lmin to lmax
     """
-    edges = np.arange(cfg.lmin, cfg.lmax + 1, cfg.delta_l)
+    edges = np.arange(cfg.lmin, cfg.lmax_maps + 1, cfg.delta_l)
     if edges[-1] < cfg.lmax + 1:
-        edges = np.append(edges, cfg.lmax + 1)
+        edges = np.append(edges, cfg.lmax_maps + 1)
     return nmt.NmtBin.from_edges(edges[:-1], edges[1:])
 
+def analysis_bin_sel(binning: nmt.NmtBin, cfg: RunConfig) -> np.ndarray:
+    """
+    Bins used in the fit: effective ell <= lmax_analysis
+    """
+    return binning.get_effective_ells() <= cfg.lmax_analysis
 
 def dl_factor(binning: nmt.NmtBin) -> np.ndarray:
     """

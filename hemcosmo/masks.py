@@ -82,5 +82,5 @@ def transfer_function(cfg: RunConfig) -> np.ndarray:
     """
     tl = hp.pixwin(cfg.nside, lmax=cfg.lmax_map)
     if cfg.beam_fwhm_deg > 0:
-        tl = tl * hp.gauss_beam(np.radians(cfg.beam_fwhm_deg), lmax=cfg.lmax_map)
+        tl = tl * hp.gauss_beam(np.radians(cfg.beam_fwhm_deg), lmax=cfg.lmax_synth)
     return tl

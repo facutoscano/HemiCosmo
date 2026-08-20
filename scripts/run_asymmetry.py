@@ -21,20 +21,22 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from hemcosmo.config import RunConfig, FIDUCIAL, get_cosmo, cosmo_from_fit
+from hemcosmo.config import RunConfig, FIDUCIAL, PARAM_NAMES, get_cosmo, cosmo_from_fit
 from hemcosmo.theory import cosmology_to_cls
 from hemcosmo.masks import load_common_mask, transfer_function
-from hemcosmo.spectra import make_binning, get_workspace, bandpowers_from_theory
+from hemcosmo.spectra import (make_binning, get_workspace, analysis_bin_sel, bandpowers_from_theory)
 from hemcosmo.sims import get_or_generate_sims, covariance
 from hemcosmo.likelihood import fit_bandpowers, fit_to_dict, hartlap_factor
 from hemcosmo.response import compute_jacobian, linear_fit
-from hemcosmo.analysis import bias_summary, hypothesis_test, print_param_table
+from hemcosmo.analysis import (bias_summary, hypothesis_test, print_param_table, frequentist_asymmetry)
 from hemcosmo import plots
 
 
 def build_config(args) -> RunConfig:
     return RunConfig(nside=args.nside, 
-                    delta_l=args.delta_l, lmin=args.lmin, lmax=args.lmax,
+                    delta_l=args.delta_l, 
+                    lmin=args.lmin, lmax_maps=args.lmax_maps, 
+                    lmax_analysis=args.lmax_analysis, 
                     apod_deg=args.apod, blend_width_deg=args.blend, beam_fwhm_deg=args.beam,
                     nsims=args.nsims, n_threads=args.n_threads, 
                     phase_mode = args.phase_mode)
@@ -47,22 +49,25 @@ def main(args):
     print(f"[asymmetry] N={north.name}  S={south.name}  config={cfg.key()}")
 
     if cfg.phase_mode == "shared" and north.name != south.name:
-        print("[asymmetry] WARNING: phase_mode='shared' with north != south -- "
-              "you are forcing correlated primordial phases between two "
-              "different cosmologies. This is not a physical realization; "
-              "use --phase_mode independent unless you specifically want the "
-              "variance-reduced comparison.")
+        print("[asymmetry] WARNING: phase_mode='shared' with north != south")
 
 
     mask = load_common_mask(cfg)
     binning = make_binning(cfg)
     wsp = get_workspace(mask, binning, cfg)
-    ells = binning.get_effective_ells()
-    nbin = binning.get_n_bands()
+    sel = analysis_bin_sel(binning, cfg)
     beam = transfer_function(cfg)
 
+    ells = binning.get_effective_ells()[sel]
+    nbin = int(sel.sum())
+    print(f"[asymmetry] bins: workspace={binning.get_n_bands()} "
+          f"(<= lmax_maps={cfg.lmax_maps}) | analysis={nbin} "
+          f"(<= lmax_analysis={cfg.lmax_analysis})")
+    
+
     # --- null covariance + fiducial reference bandpowers ---
-    null_sims = get_or_generate_sims(cfg.nsims, FIDUCIAL, FIDUCIAL, cfg, mask, wsp, binning)
+    null_sims_full = get_or_generate_sims(cfg.nsims, FIDUCIAL, FIDUCIAL, cfg, mask, wsp, binning)
+    null_sims = null_sims_full[:, sel]
     cov = covariance(null_sims)
     cinv = hartlap_factor(cfg.nsims, nbin) * np.linalg.inv(cov)
     sigma = np.sqrt(np.diag(cov))
@@ -70,33 +75,33 @@ def main(args):
 
     # theory Jacobian around fiducial (D0 == fiducial bandpowers)
     theta0 = FIDUCIAL.as_vector()
-    Dl_fid, A = compute_jacobian(theta0, FIDUCIAL.tau, wsp, binning, cfg, beam)
+    Dl_fid_full, A_full = compute_jacobian(theta0, FIDUCIAL.tau, wsp, binning, cfg, beam)
+    Dl_fid, A = Dl_fid_full[sel], A_full[sel]
 
     # effective LCDM fit to the phase_mode-matched null sky
     if args.minuit:
         null_fit = fit_to_dict(fit_bandpowers(mean_null, cov, wsp, binning, cfg,
-                                         FIDUCIAL.tau, nsims_cov=cfg.nsims, beam=beam))
+                                         FIDUCIAL.tau, nsims_cov=cfg.nsims, beam=beam, bin_sel=sel))
     else:
-        null_fit = linear_fit(mean_null, cov, theta0, A.copy(), FIDUCIAL.tau, wsp, binning, cfg, beam=beam, nsims_cov=cfg.nsims)
-
+        null_fit = linear_fit(mean_null, cov, theta0, A.copy(), FIDUCIAL.tau, wsp, binning, cfg, beam=beam, nsims_cov=cfg.nsims, bin_sel=sel)
     print(f"[asymmetry] null baseline (phase_mode='{cfg.phase_mode}') fit: "
           + "  ".join(f"{n}={v:.4g}" for n, v in zip(
               ["H0", "ombh2", "omch2", "ns", "As_tau"], null_fit["values"])))
 
     # --- asymmetric sims ---
-    asym_sims = get_or_generate_sims(cfg.nsims, north, south, cfg, mask, wsp, binning)
+    asym_sims_full = get_or_generate_sims(cfg.nsims, north, south, cfg, mask, wsp, binning)
+    asym_sims = asym_sims_full[:,sel]
     mean_asym = asym_sims.mean(axis=0)
 
     # --- fit effective full-sky LCDM to the mean asymmetric spectrum ---
     if args.minuit:
         fit = fit_to_dict(fit_bandpowers(mean_asym, cov, wsp, binning, cfg,
-                                         FIDUCIAL.tau, nsims_cov=cfg.nsims, beam=beam))
+                                         FIDUCIAL.tau, nsims_cov=cfg.nsims, beam=beam, bin_sel=sel))
     else:
-        fit = linear_fit(mean_asym, cov, theta0, A.copy(), FIDUCIAL.tau, wsp, binning,
-                         cfg, beam=beam, nsims_cov=cfg.nsims)
+        fit = linear_fit(mean_asym, cov, theta0, A.copy(), FIDUCIAL.tau, wsp, binning, cfg, beam=beam, nsims_cov=cfg.nsims, bin_sel=sel)
     best_cosmo = cosmo_from_fit(*fit["values"], FIDUCIAL.tau)
-    cl_best = cosmology_to_cls(best_cosmo, cfg.lmax_map, cfg.lens_potential_accuracy)
-    model_best = bandpowers_from_theory(cl_best, wsp, binning, beam=beam)
+    cl_best = cosmology_to_cls(best_cosmo, cfg.lmax_synth, cfg.lens_potential_accuracy)
+    model_best = bandpowers_from_theory(cl_best, wsp, binning, beam=beam)[sel]
 
     # single-sky "systematic" misfit of the effective LCDM (noise-free residual)
     r = mean_asym - model_best
@@ -109,6 +114,19 @@ def main(args):
                  baseline_errors=null_fit['errors'],
                  baseline_label=f"Null baseline ")
 
+    # --- FREQUENTIST ---
+    freq = frequentist_asymmetry(null_sims, asym_sims, cov, theta0, A, Dl_fid,
+                                 north.as_vector(), south.as_vector(),
+                                 FIDUCIAL.as_vector(), nsims_cov=cfg.nsims)
+ 
+    lin_gap = (freq["mean_asym_fit"] - fit["values"]) / fit["errors"]
+    print("\n  [linearization check] (frozen-linear central) - (nonlinear fit), in Hesse sigma:")
+    print("   " + "  ".join(f"{n}={g:+.2f}" for n, g in zip(PARAM_NAMES, lin_gap)))
+    if np.max(np.abs(lin_gap)) > 0.5:
+        print("   WARNING: |gap| > 0.5 sigma -- effective params far enough from fiducial "
+              "that curvature matters. Trust the nonlinear (fit - baseline) for the CENTRAL "
+              "value; the linear distribution still gives the correct SHAPE/scatter.")
+ 
     # --- detectability: does the mixed sky reject the fiducial full-sky model? ---
     rn = null_sims - Dl_fid
     ra = asym_sims - Dl_fid
@@ -117,14 +135,12 @@ def main(args):
     lim95 = np.percentile(chi2_null, 95)
     power = float(np.mean(chi2_asym > lim95))
     print("\n--- DETECTABILITY (mixed sky vs assumed fiducial cosmology) ---")
-    print(f"  null   chi^2 (vs fiducial): median={np.median(chi2_null):.1f}, "
-          f"95%={lim95:.1f}")
+    print(f"  null   chi^2 (vs fiducial): median={np.median(chi2_null):.1f}, 95%={lim95:.1f}")
     print(f"  mixed  chi^2 (vs fiducial): median={np.median(chi2_asym):.1f}")
     print(f"  detection power @95%: {power:.2f}  "
           f"(fraction of single mixed skies that reject the fiducial)")
-    hypothesis_test(chi2_null, np.median(chi2_asym),
-                    label="median mixed sky")
-
+    hypothesis_test(chi2_null, np.median(chi2_asym), label="median mixed sky")
+ 
     # --- save + plots ---
     tag = f"{north.name}_{south.name}"
     out = os.path.join(cfg.results_dir, f"asym_{tag}_{cfg.key()}.npz")
@@ -133,13 +149,18 @@ def main(args):
                         fit_values=fit["values"], fit_errors=fit["errors"],
                         param_cov=fit["cov"], chi2_null=chi2_null,
                         chi2_asym=chi2_asym, sys_chi2=sys_chi2,
-                        null_fit_values=null_fit['values'],
-                        null_fit_errors=null_fit['errors'],
-                        phase_mode = cfg.phase_mode,
+                        null_fit_values=null_fit["values"],
+                        null_fit_errors=null_fit["errors"],
+                        phase_mode=cfg.phase_mode,
+                        lmax_maps=cfg.lmax_maps, lmax_analysis=cfg.lmax_analysis,
+                        fits_null=freq["fits_null"], fits_asym=freq["fits_asym"],
+                        b0=freq["b0"], sigma_null=freq["sigma_null"],
+                        sigma_pair=freq["sigma_pair"], det_persky=freq["det_persky"],
+                        sig_mean=freq["sig_mean"], lin_gap=lin_gap,
                         north=north.as_vector(), south=south.as_vector(),
                         fiducial=FIDUCIAL.as_vector(), nsims=cfg.nsims)
     print(f"\n[asymmetry] saved {out}")
-
+ 
     plots.plot_bandpowers(ells, mean_asym, model_best, sigma,
                           os.path.join(cfg.results_dir, f"asym_bandpowers_{tag}_{cfg.key()}.png"),
                           title=f"Mixed sky N={north.name}/S={south.name}: mean vs effective LCDM")
@@ -151,18 +172,27 @@ def main(args):
     plots.plot_chi2_detectability(
         chi2_null, chi2_asym,
         os.path.join(cfg.results_dir, f"asym_chi2_{tag}_{cfg.key()}.png"),
-        ndof=int(nbin-5), title=f"Detectability N={north.name}/S={south.name}",
+        ndof=nbin, title=f"Detectability N={north.name}/S={south.name}",
         label_asym=f"N={north.name}/S={south.name}")
-
-
+    plots.plot_asym_fit_distribution(
+        freq["fits_null"], freq["fits_asym"],
+        north.as_vector(), south.as_vector(), FIDUCIAL.as_vector(),
+        os.path.join(cfg.results_dir, f"asym_fitdist_{tag}_{cfg.key()}.png"),
+        baseline_vec=null_fit["values"],
+        title=f"Effective-parameter distributions  N={north.name}/S={south.name}")
+ 
+ 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Asymmetric-sky bias measurement.")
     p.add_argument("--north", type=str, default="fiducial", help="preset name or 'fiducial'")
-    p.add_argument("--south", type=str, default="high_H0", help="preset name or 'fiducial'")
+    p.add_argument("--south", type=str, default="SHOES-like", help="preset name or 'fiducial'")
     p.add_argument("--nside", type=int, default=512)
     p.add_argument("--delta_l", type=int, default=30)
-    p.add_argument("--lmin", type=int, default=30)
-    p.add_argument("--lmax", type=int, default=None)
+    p.add_argument("--lmin", type=int, default=32)
+    p.add_argument("--lmax_maps", type=int, default=None,
+                   help="workspace/binning band (default 2.1*nside)")
+    p.add_argument("--lmax_analysis", type=int, default=None,
+                   help="analysis cut used in the fit (default 1.5*nside)")
     p.add_argument("--apod", type=float, default=3.0)
     p.add_argument("--blend", type=float, default=5.0)
     p.add_argument("--beam", type=float, default=0.0)
@@ -171,6 +201,5 @@ if __name__ == "__main__":
                    help="sim workers (default: 50%% of logical cores)")
     p.add_argument("--minuit", action="store_true",
                    help="use the (slow) nonlinear Minuit fit instead of linear response")
-    p.add_argument("--phase_mode", choices=['shared', 'independent'], 
-                   default='independent')
+    p.add_argument("--phase_mode", choices=['shared', 'independent'], default='independent')
     main(p.parse_args())

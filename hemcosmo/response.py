@@ -23,7 +23,7 @@ def model_bandpowers(theta, tau, wsp, binning, cfg: RunConfig, beam=None):
     Binned D_l for a fit-basis parameter vector theta
     """
     cosmo = cosmo_from_fit(*theta, tau)
-    cl = cosmology_to_cls(cosmo, cfg.lmax_map, cfg.lens_potential_accuracy)
+    cl = cosmology_to_cls(cosmo, cfg.lmax_synth, cfg.lens_potential_accuracy)
     return bandpowers_from_theory(cl, wsp, binning, beam=beam)
 
 

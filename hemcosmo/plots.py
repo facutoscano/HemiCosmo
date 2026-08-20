@@ -229,3 +229,36 @@ def plot_fit_distribution(fits, truth_vec, hesse, outpath, title=""):
     fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
     print(f"[plots] saved {outpath}")
+
+def plot_asym_fit_distribution(fits_null, fits_asym, north_vec, south_vec,
+                               fid_vec, outpath, baseline_vec=None, title=""):
+    """
+    One panel per parameter: histograms of the per-sim effective parameters for
+    the null (A=B=fiducial, grey) and the mixed sky (red), with the North and
+    South input truths, the fiducial, and the null baseline overlaid
+    """
+    fits_null = np.asarray(fits_null, float)
+    fits_asym = np.asarray(fits_asym, float)
+    n = len(PARAM_LABELS)
+    fig, axes = plt.subplots(1, n, figsize=(2.7 * n, 3.9))
+    for i, ax in enumerate(axes):
+        cn, ca = fits_null[:, i], fits_asym[:, i]
+        lo = min(cn.min(), ca.min(), north_vec[i], south_vec[i])
+        hi = max(cn.max(), ca.max(), north_vec[i], south_vec[i])
+        bins = np.linspace(lo, hi, 32)
+        ax.hist(cn, bins=bins, density=True, color="0.6", alpha=0.65, label="null")
+        ax.hist(ca, bins=bins, density=True, color="#c1121f", alpha=0.55, label="mixed")
+        ax.axvline(north_vec[i], color="#1d6fb8", lw=1.6, label="North in")
+        ax.axvline(south_vec[i], color="#7a1020", lw=1.6, ls="-.", label="South in")
+        ax.axvline(fid_vec[i], color="k", ls="--", lw=1, label="fiducial")
+        if baseline_vec is not None:
+            ax.axvline(baseline_vec[i], color="0.3", ls=":", lw=1.2, label="baseline")
+        ax.set_title(PARAM_LABELS[i], fontsize=10)
+        ax.set_yticks([])
+    axes[0].legend(fontsize=6.5, loc="upper right")
+    if title:
+        fig.suptitle(title)
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[plots] saved {outpath}")

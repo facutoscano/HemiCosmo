@@ -47,7 +47,7 @@ def make_chi2(data_dl, cov, wsp, binning, cfg: RunConfig, tau: float,
     def chi2(H0, ombh2, omch2, ns, As_tau):
         try:
             cosmo = cosmo_from_fit(H0, ombh2, omch2, ns, As_tau, tau)
-            cl = cosmology_to_cls(cosmo, cfg.lmax_map, cfg.lens_potential_accuracy)
+            cl = cosmology_to_cls(cosmo, cfg.lmax_synth, cfg.lens_potential_accuracy)
         except Exception as exc:                       # non-physical params
             print(f"[likelihood] CAMB failed: {exc}")
             return 1e30
