@@ -48,6 +48,9 @@ def main(args):
     south = get_cosmo(args.south)
     print(f"[asymmetry] N={north.name}  S={south.name}  config={cfg.key()}")
 
+    tag = f"{north.name}_{south.name}"
+    outdir = cfg.results_for(tag) 
+
     if cfg.phase_mode == "shared" and north.name != south.name:
         print("[asymmetry] WARNING: phase_mode='shared' with north != south")
 
@@ -108,12 +111,6 @@ def main(args):
     sys_chi2 = float(r @ cinv @ r)
     ndof_param = nbin - 5
 
-    bias_summary(fit["values"], fit["errors"], north, south, FIDUCIAL,
-                 chi2_val=sys_chi2, ndof=ndof_param,
-                 baseline_values = null_fit['values'],
-                 baseline_errors=null_fit['errors'],
-                 baseline_label=f"Null baseline ")
-
     # --- FREQUENTIST ---
     freq = frequentist_asymmetry(null_sims, asym_sims, cov, theta0, A, Dl_fid,
                                  north.as_vector(), south.as_vector(),
@@ -126,6 +123,12 @@ def main(args):
         print("   WARNING: |gap| > 0.5 sigma -- effective params far enough from fiducial "
               "that curvature matters. Trust the nonlinear (fit - baseline) for the CENTRAL "
               "value; the linear distribution still gives the correct SHAPE/scatter.")
+
+    bias_summary(freq["mean_asym_fit"], freq["sigma_null"], north, south, FIDUCIAL,
+                     chi2_val=sys_chi2, ndof=ndof_param,
+                     baseline_values = freq['mean_null_fit'],
+                     baseline_errors=freq['sigma_null'],
+                     baseline_label=f"Null baseline ")
  
     # --- detectability: does the mixed sky reject the fiducial full-sky model? ---
     rn = null_sims - Dl_fid
@@ -143,7 +146,7 @@ def main(args):
  
     # --- save + plots ---
     tag = f"{north.name}_{south.name}"
-    out = os.path.join(cfg.results_dir, f"asym_{tag}_{cfg.key()}.npz")
+    out = os.path.join(outdir, f"asym_{tag}_{cfg.key()}.npz")
     np.savez_compressed(out, ells=ells, mean_asym=mean_asym, cov=cov,
                         Dl_fid=Dl_fid, model_best=model_best,
                         fit_values=fit["values"], fit_errors=fit["errors"],
@@ -160,24 +163,29 @@ def main(args):
                         north=north.as_vector(), south=south.as_vector(),
                         fiducial=FIDUCIAL.as_vector(), nsims=cfg.nsims)
     print(f"\n[asymmetry] saved {out}")
- 
-    plots.plot_bandpowers(ells, mean_asym, model_best, sigma,
-                          os.path.join(cfg.results_dir, f"asym_bandpowers_{tag}_{cfg.key()}.png"),
+
+    cl_n = cosmology_to_cls(north, cfg.lmax_synth, cfg.lens_potential_accuracy)
+    cl_s = cosmology_to_cls(south, cfg.lmax_synth, cfg.lens_potential_accuracy)
+    bp_north = bandpowers_from_theory(cl_n, wsp, binning, beam=beam)[sel]
+    bp_south = bandpowers_from_theory(cl_s, wsp, binning, beam=beam)[sel]
+
+    plots.plot_bandpowers_asym(ells, mean_asym, model_best, sigma, bp_north, bp_south, 
+                          os.path.join(outdir, f"asym_bandpowers_{tag}_{cfg.key()}.png"),
                           title=f"Mixed sky N={north.name}/S={south.name}: mean vs effective LCDM")
     plots.plot_global_vs_hemispheres(
         fit["values"], fit["errors"], north.as_vector(), south.as_vector(),
-        os.path.join(cfg.results_dir, f"asym_global_vs_hemis_{tag}_{cfg.key()}.png"),
+        os.path.join(outdir, f"asym_global_vs_hemis_{tag}_{cfg.key()}.png"),
         fid_vec=FIDUCIAL.as_vector(),
         title=f"Global full-sky fit vs hemisphere inputs  (N={north.name}, S={south.name})")
     plots.plot_chi2_detectability(
         chi2_null, chi2_asym,
-        os.path.join(cfg.results_dir, f"asym_chi2_{tag}_{cfg.key()}.png"),
+        os.path.join(outdir, f"asym_chi2_{tag}_{cfg.key()}.png"),
         ndof=nbin, title=f"Detectability N={north.name}/S={south.name}",
         label_asym=f"N={north.name}/S={south.name}")
     plots.plot_asym_fit_distribution(
         freq["fits_null"], freq["fits_asym"],
         north.as_vector(), south.as_vector(), FIDUCIAL.as_vector(),
-        os.path.join(cfg.results_dir, f"asym_fitdist_{tag}_{cfg.key()}.png"),
+        os.path.join(outdir, f"asym_fitdist_{tag}_{cfg.key()}.png"),
         baseline_vec=null_fit["values"],
         title=f"Effective-parameter distributions  N={north.name}/S={south.name}")
  

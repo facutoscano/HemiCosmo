@@ -69,6 +69,15 @@ def cosmo_from_fit(H0, ombh2, omch2, ns, As_tau, tau, name="") -> Cosmology:
     return Cosmology(H0=H0, ombh2=ombh2, omch2=omch2, ns=ns, As=As, tau=tau, name=name)
 
 
+def results_for(self, *parts) -> str:
+    """
+    Results Sub-dir
+    """
+    path = os.path.join(self.results_dir, *parts)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 # Planck 2018 base (Only TT)
 FIDUCIAL = Cosmology(H0=66.88, ombh2=0.02212, omch2=0.1206,
                      ns=0.9626, As=2.092e-9, tau=0.0522, name="fiducial")

@@ -262,3 +262,27 @@ def plot_asym_fit_distribution(fits_null, fits_asym, north_vec, south_vec,
     fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
     print(f"[plots] saved {outpath}")
+
+def plot_bandpowers_asym(ells, data_dl, model_dl, sigma, bp_north, bp_south,
+                         outpath, title=""):
+    """
+    Mean bandpowers of the mixed sky vs LCDM with the theoretical N and S profiles
+    """
+    fig, ax = plt.subplots(2, 1, figsize=(9, 7), sharex=True,
+                           gridspec_kw={"height_ratios": [3, 1], "hspace": 0.05})
+    ax[0].plot(ells, bp_north, color="#1d6fb8", lw=1.4, alpha=0.9, label="North theory")
+    ax[0].plot(ells, bp_south, color="#c1121f", lw=1.4, alpha=0.9, label="South theory")
+    ax[0].errorbar(ells, data_dl, yerr=sigma, fmt="o", ms=4, capsize=2,
+                   color="k", label="mixed sims mean")
+    ax[0].plot(ells, model_dl, "g-", lw=1.5, label="effective LCDM fit")
+    ax[0].set_ylabel(r"$D_\ell\ [\mu K^2]$"); ax[0].set_xscale("log")
+    ax[0].legend(fontsize=8); ax[0].grid(alpha=0.3); ax[0].set_title(title)
+
+    ax[1].axhline(0, color="k", ls="--", lw=0.8)
+    ax[1].plot(ells, (data_dl-bp_north)/sigma, color="#1d6fb8", lw=1, label=r"$(\bar d-N)/\sigma$")
+    ax[1].plot(ells, (data_dl-bp_south)/sigma, color="#c1121f", lw=1, label=r"$(\bar d-S)/\sigma$")
+    ax[1].plot(ells, (data_dl-model_dl)/sigma, "go-", ms=3, label=r"$(\bar d-\mathrm{fit})/\sigma$")
+    ax[1].set_ylabel(r"$\Delta/\sigma$"); ax[1].set_xlabel(r"$\ell$")
+    ax[1].legend(fontsize=7, ncol=3); ax[1].grid(alpha=0.3)
+    fig.savefig(outpath, bbox_inches="tight"); plt.close(fig)
+    print(f"[plots] saved {outpath}")

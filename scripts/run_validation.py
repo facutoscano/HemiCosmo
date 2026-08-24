@@ -62,6 +62,8 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, sel, beam):
               f"this is NOT the pipeline null test;"
               f"it measures the hemisphere-stitching systematic.")
 
+    outdir = cfg.results_for("validation")
+
     ells_full = binning.get_effective_ells()
     ells = ells_full[sel]
     nbin = int(sel.sum())
@@ -115,11 +117,11 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, sel, beam):
                                   FIDUCIAL.as_vector(), nsims_cov=cfg.nsims)
     plots.plot_fit_distribution(
         freq["fits"], FIDUCIAL.as_vector(), freq["hesse"],
-        os.path.join(cfg.results_dir, f"validation_fitdist_{cfg.key()}.png"),
+        os.path.join(outdir, f"validation_fitdist_{cfg.key()}.png"),
         title=f"Per-sim fit distribution ({cfg.phase_mode})")
 
     ## Saving & Plotting
-    out = os.path.join(cfg.results_dir, f"validation_{cfg.key()}.npz")
+    out = os.path.join(outdir, f"validation_{cfg.key()}.npz")
     np.savez_compressed(out, ells=ells, mean_null=mean_null, cov=cov,
                         Dl_fid=Dl_fid, chi2_null=chi2_null,
                         fit_values=fit["values"], fit_errors=fit["errors"],
@@ -133,7 +135,7 @@ def run_phase_mode(phase_mode, args, mask, binning, wsp, sel, beam):
     cl_best = cosmology_to_cls(best_cosmo, cfg.lmax_synth, cfg.lens_potential_accuracy)
     model_bestfit = bandpowers_from_theory(cl_best, wsp, binning, beam=beam)[sel]
     plots.plot_bandpowers(ells, mean_null, model_bestfit, sigma,
-                          os.path.join(cfg.results_dir, f"validation_bandpowers_{cfg.key()}.png"),
+                          os.path.join(outdir, f"validation_bandpowers_{cfg.key()}.png"),
                           title="Null test: mean sims vs best-fit LCDM")
 
     return dict(cfg=cfg, 
@@ -161,7 +163,7 @@ def compare_phase_modes(args, mask, binning, wsp, sel, beam):
         print(f"  {name:>8s}: diff={d:+.4g}   sigma_diff={s:.4g}   pull={p:+.2f} sigma")
  
     cfg_shared = results["shared"]["cfg"]
-    out = os.path.join(cfg_shared.results_dir, f"phase_mode_comparison_{cfg_shared.geom_key()}.npz")
+    out = os.path.join(cfg_shared.results_for('validation'), f"phase_mode_comparison_{cfg_shared.geom_key()}.npz")
     np.savez_compressed(out,
                         values_shared=fs["values"], errors_shared=fs["errors"],
                         values_indep=fi["values"], errors_indep=fi["errors"],
@@ -171,7 +173,7 @@ def compare_phase_modes(args, mask, binning, wsp, sel, beam):
  
     plots.plot_phase_mode_comparison(
         fs["values"], fs["errors"], fi["values"], fi["errors"], FIDUCIAL.as_vector(),
-        os.path.join(cfg_shared.results_dir, f"phase_mode_comparison_{cfg_shared.geom_key()}.png"),
+        os.path.join(cfg_shared.results_for('validation'), f"phase_mode_comparison_{cfg_shared.geom_key()}.png"),
         title="Null test vs hemisphere-stitching systematic")
 
 def main(args):
