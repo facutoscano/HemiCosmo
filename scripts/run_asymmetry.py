@@ -174,7 +174,7 @@ def main(args):
                           title=f"N={north.name}/S={south.name}")
     
     plots.plot_global_vs_hemispheres(
-        freq["mean_asym_fit"], freq["sigma_pair"], north.as_vector(), south.as_vector(),
+        freq["mean_asym_fit"], freq["sigma_asym"], north.as_vector(), south.as_vector(),
         os.path.join(outdir, f"asym_global_vs_hemis_{tag}_{cfg.key()}.png"),
         fid_vec=FIDUCIAL.as_vector(),
         baseline_vec=freq["mean_null_fit"],
