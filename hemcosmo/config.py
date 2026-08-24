@@ -79,7 +79,7 @@ rng = np.random.default_rng()
 PRESETS = {
     "fiducial": FIDUCIAL,
     "SHOES-like": replace(FIDUCIAL, H0=74.0, name="SHOES-like"),
-    "low_H0":  replace(FIDUCIAL, H0=62.0, name="low_H0"),
+    "low_H0":  replace(FIDUCIAL, H0=60.0, name="low_H0"),
     "red_ns":  replace(FIDUCIAL, ns=0.92, name="red_ns"),         
     "blue_ns": replace(FIDUCIAL, ns=1.00, name="blue_ns"), 
     "high_oc": replace(FIDUCIAL, omch2=0.135, name="high_oc"),
