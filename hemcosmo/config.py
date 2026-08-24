@@ -19,7 +19,7 @@ CACHE_DIR = os.path.join(PROJECT_DIR, "cache")
 
 #Parameter vector
 PARAM_NAMES = ["H0", "ombh2", "omch2", "ns", "As_tau"]
-PARAM_LABELS = [r"$H_0$", r"$\Omega_b h^2$", r"$\Omega_c h^2$",
+PARAM_LABELS = [r"$H_0$", r"$\omega_b$", r"$\omega_c$",
                 r"$n_s$", r"$10^9\,A_s e^{-2\tau}$"]
 
 

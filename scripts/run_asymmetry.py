@@ -171,23 +171,27 @@ def main(args):
 
     plots.plot_bandpowers_asym(ells, mean_asym, model_best, sigma, bp_north, bp_south, 
                           os.path.join(outdir, f"asym_bandpowers_{tag}_{cfg.key()}.png"),
-                          title=f"Mixed sky N={north.name}/S={south.name}: mean vs effective LCDM")
+                          title=f"N={north.name}/S={south.name}")
+    
     plots.plot_global_vs_hemispheres(
-        fit["values"], fit["errors"], north.as_vector(), south.as_vector(),
+        freq["mean_asym_fit"], freq["sigma_pair"], north.as_vector(), south.as_vector(),
         os.path.join(outdir, f"asym_global_vs_hemis_{tag}_{cfg.key()}.png"),
         fid_vec=FIDUCIAL.as_vector(),
-        title=f"Global full-sky fit vs hemisphere inputs  (N={north.name}, S={south.name})")
+        baseline_vec=freq["mean_null_fit"],
+        title=f"N={north.name}/S={south.name}")
+    
     plots.plot_chi2_detectability(
         chi2_null, chi2_asym,
         os.path.join(outdir, f"asym_chi2_{tag}_{cfg.key()}.png"),
-        ndof=nbin, title=f"Detectability N={north.name}/S={south.name}",
+        ndof=nbin, title=f"N={north.name}/S={south.name}",
         label_asym=f"N={north.name}/S={south.name}")
+    
     plots.plot_asym_fit_distribution(
         freq["fits_null"], freq["fits_asym"],
         north.as_vector(), south.as_vector(), FIDUCIAL.as_vector(),
         os.path.join(outdir, f"asym_fitdist_{tag}_{cfg.key()}.png"),
-        baseline_vec=null_fit["values"],
-        title=f"Effective-parameter distributions  N={north.name}/S={south.name}")
+        baseline_vec=freq["mean_null_fit"],
+        title=f"N={north.name}/S={south.name}")
  
  
 if __name__ == "__main__":

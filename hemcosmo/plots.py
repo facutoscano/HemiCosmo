@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from .config import PARAM_LABELS, PARAM_NAMES
+from .config import PARAM_LABELS
 
 
 def plot_bandpowers(ells, data_dl, model_dl, sigma, outpath, title=""):
@@ -38,7 +38,7 @@ def plot_bandpowers(ells, data_dl, model_dl, sigma, outpath, title=""):
 
 
 def plot_global_vs_hemispheres(fit_values, fit_errors, north_vec, south_vec,
-                               outpath, fid_vec=None, title=""):
+                               outpath, fid_vec=None, baseline_vec=None, title=""):
     """
     One panel per parameter: where the global full-sky fit lands relative to
     the North and South input values
@@ -47,13 +47,14 @@ def plot_global_vs_hemispheres(fit_values, fit_errors, north_vec, south_vec,
     fig, axes = plt.subplots(1, n, figsize=(2.4 * n, 4.2))
     for i, ax in enumerate(axes):
         nv, sv = north_vec[i], south_vec[i]
-        ax.axhline(nv, color="#1d6fb8", lw=2, label="North input")
-        ax.axhline(sv, color="#c1121f", lw=2, label="South input")
-        ax.axhline(0.5 * (nv + sv), color="gray", ls=":", lw=1.5, label="midpoint")
+        ax.axhline(nv, color="#1d6fb8", lw=2, label="North")
+        ax.axhline(sv, color="#c1121f", lw=2, label="South")
         if fid_vec is not None:
             ax.axhline(fid_vec[i], color="k", ls="--", lw=1, label="fiducial")
+        if baseline_vec is not None:
+            ax.axhline(baseline_vec[i], color='k', ls=':', lw=1, label='baseline')
         ax.errorbar([0], [fit_values[i]], yerr=[fit_errors[i]], fmt="ks",
-                    ms=8, capsize=5, lw=2, label="global fit", zorder=5)
+                    ms=8, capsize=3, lw=2, label="Global fit", zorder=5)
         lo = min(nv, sv, fit_values[i] - fit_errors[i])
         hi = max(nv, sv, fit_values[i] + fit_errors[i])
         pad = 0.15 * (hi - lo + 1e-12)
@@ -181,21 +182,21 @@ def plot_chi2_detectability(chi2_null, chi2_asym, outpath, ndof=None,
 
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.hist(chi2_null, bins=bins, density=True, alpha=0.55, color="#1d6fb8",
-            label="null (A=B=fiducial)")
+            label="A=B=fiducial")
     ax.hist(chi2_asym, bins=bins, density=True, alpha=0.55, color="#c1121f",
             label=label_asym)
     ax.axvline(lim95, color="k", ls="--", lw=1.5,
-               label=rf"null 95% = {lim95:.0f}")
+               label=rf"95% C.L")
     ax.axvline(np.median(chi2_asym), color="#c1121f", ls=":", lw=1.5,
-               label=rf"median {label_asym} = {np.median(chi2_asym):.0f}")
+               label=rf"median {label_asym}")
     if ndof is not None:
         from scipy.stats import chi2 as _c2
         xx = np.linspace(lo, hi, 400)
         ax.plot(xx, _c2.pdf(xx, df=ndof), "k-", lw=1, alpha=0.6,
-                label=rf"$\chi^2_{{{ndof}}}$ (theory)")
+                label=rf"$\chi^2_{{{ndof}}}$")
     ax.set_xlabel(r"$\chi^2$ vs assumed fiducial")
     ax.set_ylabel("density")
-    ax.set_title((title + f"\ndetection power @95% = {power:.2f}").strip())
+    ax.set_title(title)
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     fig.savefig(outpath, bbox_inches="tight")
@@ -246,16 +247,16 @@ def plot_asym_fit_distribution(fits_null, fits_asym, north_vec, south_vec,
         lo = min(cn.min(), ca.min(), north_vec[i], south_vec[i])
         hi = max(cn.max(), ca.max(), north_vec[i], south_vec[i])
         bins = np.linspace(lo, hi, 32)
-        ax.hist(cn, bins=bins, density=True, color="0.6", alpha=0.65, label="null")
-        ax.hist(ca, bins=bins, density=True, color="#c1121f", alpha=0.55, label="mixed")
-        ax.axvline(north_vec[i], color="#1d6fb8", lw=1.6, label="North in")
-        ax.axvline(south_vec[i], color="#7a1020", lw=1.6, ls="-.", label="South in")
+        ax.hist(cn, bins=bins, density=True, color="0.6", alpha=0.65, label="Baseline")
+        ax.hist(ca, bins=bins, density=True, color="#c1121f", alpha=0.55, label="Mixed")
+        ax.axvline(north_vec[i], color="#1d6fb8", lw=1.6, label="North")
+        ax.axvline(south_vec[i], color="#7a1020", lw=1.6, label="South")
         ax.axvline(fid_vec[i], color="k", ls="--", lw=1, label="fiducial")
         if baseline_vec is not None:
-            ax.axvline(baseline_vec[i], color="0.3", ls=":", lw=1.2, label="baseline")
+            ax.axvline(baseline_vec[i], color="k", ls=":", lw=1.2, label="baseline")
         ax.set_title(PARAM_LABELS[i], fontsize=10)
         ax.set_yticks([])
-    axes[0].legend(fontsize=6.5, loc="upper right")
+    axes[0].legend(fontsize=6.5, loc="best")
     if title:
         fig.suptitle(title)
     fig.tight_layout(rect=[0, 0, 1, 0.94])
@@ -270,19 +271,20 @@ def plot_bandpowers_asym(ells, data_dl, model_dl, sigma, bp_north, bp_south,
     """
     fig, ax = plt.subplots(2, 1, figsize=(9, 7), sharex=True,
                            gridspec_kw={"height_ratios": [3, 1], "hspace": 0.05})
-    ax[0].plot(ells, bp_north, color="#1d6fb8", lw=1.4, alpha=0.9, label="North theory")
-    ax[0].plot(ells, bp_south, color="#c1121f", lw=1.4, alpha=0.9, label="South theory")
+    ax[0].plot(ells, bp_north, color="#1d6fb8", lw=1.4, alpha=0.9, label="North")
+    ax[0].plot(ells, bp_south, color="#c1121f", lw=1.4, alpha=0.9, label="South")
     ax[0].errorbar(ells, data_dl, yerr=sigma, fmt="o", ms=4, capsize=2,
-                   color="k", label="mixed sims mean")
-    ax[0].plot(ells, model_dl, "g-", lw=1.5, label="effective LCDM fit")
+                   color="k", label="Mixed sims")
+    ax[0].plot(ells, model_dl, "g-", lw=1.5, label="Effective LCDM fit")
     ax[0].set_ylabel(r"$D_\ell\ [\mu K^2]$"); ax[0].set_xscale("log")
     ax[0].legend(fontsize=8); ax[0].grid(alpha=0.3); ax[0].set_title(title)
 
     ax[1].axhline(0, color="k", ls="--", lw=0.8)
-    ax[1].plot(ells, (data_dl-bp_north)/sigma, color="#1d6fb8", lw=1, label=r"$(\bar d-N)/\sigma$")
-    ax[1].plot(ells, (data_dl-bp_south)/sigma, color="#c1121f", lw=1, label=r"$(\bar d-S)/\sigma$")
-    ax[1].plot(ells, (data_dl-model_dl)/sigma, "go-", ms=3, label=r"$(\bar d-\mathrm{fit})/\sigma$")
+    ax[1].plot(ells, (data_dl-bp_north)/sigma, color="#1d6fb8", lw=1, label=r"$(\bar D-N)/\sigma$")
+    ax[1].plot(ells, (data_dl-bp_south)/sigma, color="#c1121f", lw=1, label=r"$(\bar D-S)/\sigma$")
+    ax[1].plot(ells, (data_dl-model_dl)/sigma, "go-", ms=3, label=r"$(\bar D-\mathrm{fit})/\sigma$")
     ax[1].set_ylabel(r"$\Delta/\sigma$"); ax[1].set_xlabel(r"$\ell$")
+    ax[1].set_ylim(-5,5)
     ax[1].legend(fontsize=7, ncol=3); ax[1].grid(alpha=0.3)
     fig.savefig(outpath, bbox_inches="tight"); plt.close(fig)
     print(f"[plots] saved {outpath}")
