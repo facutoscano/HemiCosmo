@@ -84,7 +84,7 @@ PRESETS = {
     "fiducial": FIDUCIAL,
     "74H0": replace(FIDUCIAL, H0=74.0, name="74H0"),
     "71H0": replace(FIDUCIAL, H0=71.0, name="71H0"),
-    "68H0": replace(FIDUCIAL, H0=68.0, name='68H0'),
+    "68H0": replace(FIDUCIAL, H0=68.5, name='68H0'),
     "65H0": replace(FIDUCIAL, H0=65.0, name='65H0'),
     "62H0": replace(FIDUCIAL, H0=62.0, name='62H0'),
     "red_ns":  replace(FIDUCIAL, ns=0.92, name="red_ns"),         
