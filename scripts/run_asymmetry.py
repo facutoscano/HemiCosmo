@@ -21,14 +21,14 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from hemcosmo.config import RunConfig, FIDUCIAL, PARAM_NAMES, get_cosmo, cosmo_from_fit
-from hemcosmo.theory import cosmology_to_cls
+from hemcosmo.config import RunConfig, FIDUCIAL, PARAM_NAMES, get_cosmo, cosmo_from_fit, OMNUH2_FIDUCIAL, PARAM_LABELS
+from hemcosmo.theory import (cosmology_to_cls, cosmology_to_sigma8, sigma8_gradient)
 from hemcosmo.masks import load_common_mask, transfer_function
 from hemcosmo.spectra import (make_binning, get_workspace, analysis_bin_sel, bandpowers_from_theory)
 from hemcosmo.sims import get_or_generate_sims, covariance
 from hemcosmo.likelihood import fit_bandpowers, fit_to_dict, hartlap_factor
 from hemcosmo.response import compute_jacobian, linear_fit
-from hemcosmo.analysis import (bias_summary, hypothesis_test, print_param_table, frequentist_asymmetry)
+from hemcosmo.analysis import (bias_summary, hypothesis_test, frequentist_asymmetry, chi2_goodness_of_fit, derive_Omega_m)
 from hemcosmo import plots
 
 
@@ -143,8 +143,17 @@ def main(args):
     print(f"  detection power @95%: {power:.2f}  "
           f"(fraction of single mixed skies that reject the fiducial)")
     hypothesis_test(chi2_null, np.median(chi2_asym), label="median mixed sky")
+
+    chi2_gof_null = chi2_goodness_of_fit(null_sims, cov, A, Dl_fid, nsims_cov=cfg.nsims)
+    chi2_gof_asym = chi2_goodness_of_fit(asym_sims, cov, A, Dl_fid, nsims_cov=cfg.nsims)
+    lim95_gof = np.percentile(chi2_gof_null, 95)
+    power_gof = float(np.mean(chi2_gof_asym > lim95_gof))
+    print("\n--- GOODNESS-OF-FIT DETECTABILITY (best-fit LCDM per sky) ---")
+    print(f"  null  chi2: median={np.median(chi2_gof_null):.1f} (expect ~{nbin-5})")
+    print(f"  mixed chi2: median={np.median(chi2_gof_asym):.1f}")
+    print(f"  detection power @95% : {power_gof:.3f}  (expect ~0)")
  
-    # --- save + plots ---
+    # Saving
     tag = f"{north.name}_{south.name}"
     out = os.path.join(outdir, f"asym_{tag}_{cfg.key()}.npz")
     np.savez_compressed(out, ells=ells, mean_asym=mean_asym, cov=cov,
@@ -164,36 +173,63 @@ def main(args):
                         fiducial=FIDUCIAL.as_vector(), nsims=cfg.nsims)
     print(f"\n[asymmetry] saved {out}")
 
+    ## Derived Omega_m and sigma8 
+    Om_null = derive_Omega_m(freq["fits_null"], OMNUH2_FIDUCIAL)
+    Om_asym = derive_Omega_m(freq["fits_asym"], OMNUH2_FIDUCIAL)
+    s8_0, s8_grad = sigma8_gradient(theta0, FIDUCIAL.tau)
+    s8_null = s8_0 + (freq["fits_null"] - theta0) @ s8_grad
+    s8_asym = s8_0 + (freq["fits_asym"] - theta0) @ s8_grad
+
+    # fiducial / north / south truths for the derived params
+    Om_fid = derive_Omega_m(FIDUCIAL.as_vector()[None, :], OMNUH2_FIDUCIAL)[0]
+    Om_north = derive_Omega_m(north.as_vector()[None, :], OMNUH2_FIDUCIAL)[0]
+    Om_south = derive_Omega_m(south.as_vector()[None, :], OMNUH2_FIDUCIAL)[0]
+    s8_fid   = s8_0
+    s8_north = cosmology_to_sigma8(north)
+    s8_south = cosmology_to_sigma8(south)
+    print(f"[derived] Omega_m: null={Om_null.mean():.4f} mixed={Om_asym.mean():.4f} "
+          f"(fid {Om_fid:.4f}, N {Om_north:.4f}, S {Om_south:.4f})")
+    print(f"[derived] sigma8 : null={s8_null.mean():.4f} mixed={s8_asym.mean():.4f} "
+          f"(fid {s8_fid:.4f}, N {s8_north:.4f}, S {s8_south:.4f})")
+
+    ## Theoretical N/S bandpowers
     cl_n = cosmology_to_cls(north, cfg.lmax_synth, cfg.lens_potential_accuracy)
     cl_s = cosmology_to_cls(south, cfg.lmax_synth, cfg.lens_potential_accuracy)
     bp_north = bandpowers_from_theory(cl_n, wsp, binning, beam=beam)[sel]
     bp_south = bandpowers_from_theory(cl_s, wsp, binning, beam=beam)[sel]
 
-    plots.plot_bandpowers_asym(ells, mean_asym, model_best, sigma, bp_north, bp_south, 
-                          os.path.join(outdir, f"asym_bandpowers_{tag}_{cfg.key()}.png"),
-                          title=f"N={north.name}/S={south.name}")
-    
+    ## Plotting
+    ext = "pdf"
+    plots.plot_bandpowers_asym(
+        ells, mean_asym, model_best, sigma, bp_north, bp_south,
+        os.path.join(outdir, f"asym_bandpowers_{tag}_{cfg.key()}.{ext}"),
+        title=f"N={north.name}/S={south.name}")
+
     plots.plot_global_vs_hemispheres(
         freq["mean_asym_fit"], freq["sigma_asym"], north.as_vector(), south.as_vector(),
-        os.path.join(outdir, f"asym_global_vs_hemis_{tag}_{cfg.key()}.png"),
-        fid_vec=FIDUCIAL.as_vector(),
-        baseline_vec=freq["mean_null_fit"],
+        os.path.join(outdir, f"asym_global_vs_hemis_{tag}_{cfg.key()}.{ext}"),
+        fid_vec=FIDUCIAL.as_vector(), baseline_vec=freq["mean_null_fit"],
         title=f"N={north.name}/S={south.name}")
-    
-    plots.plot_chi2_detectability(
-        chi2_null, chi2_asym,
-        os.path.join(outdir, f"asym_chi2_{tag}_{cfg.key()}.png"),
-        ndof=nbin, title=f"N={north.name}/S={south.name}",
-        label_asym=f"N={north.name}/S={south.name}")
-    
+
+    cols_null = np.column_stack([freq["fits_null"], s8_null, Om_null])
+    cols_asym = np.column_stack([freq["fits_asym"], s8_asym, Om_asym])
+    labels7 = PARAM_LABELS + [r"$\sigma_8$", r"$\Omega_m$"]
+    north7 = np.append(north.as_vector(), [s8_north, Om_north])
+    south7 = np.append(south.as_vector(), [s8_south, Om_south])
+    fid7   = np.append(FIDUCIAL.as_vector(), [s8_fid, Om_fid])
+    base7  = np.append(freq["mean_null_fit"], [s8_null.mean(), Om_null.mean()])
     plots.plot_asym_fit_distribution(
-        freq["fits_null"], freq["fits_asym"],
-        north.as_vector(), south.as_vector(), FIDUCIAL.as_vector(),
-        os.path.join(outdir, f"asym_fitdist_{tag}_{cfg.key()}.png"),
-        baseline_vec=freq["mean_null_fit"],
-        title=f"N={north.name}/S={south.name}")
- 
- 
+        cols_null, cols_asym, north7, south7, fid7, labels7,
+        os.path.join(outdir, f"asym_fitdist_{tag}_{cfg.key()}.{ext}"),
+        baseline_vec=base7, title=f"N={north.name}/S={south.name}")
+
+    plots.plot_detectability_dual(
+        chi2_null, chi2_asym, chi2_gof_null, chi2_gof_asym, nbin,
+        os.path.join(outdir, f"asym_chi2_{tag}_{cfg.key()}.{ext}"),
+        title=f"N={north.name}/S={south.name}", label_asym=f"N={north.name}/S={south.name}")
+
+
+#%% Main Pipeline 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Asymmetric-sky bias measurement.")
     p.add_argument("--north", type=str, default="fiducial", help="preset name or 'fiducial'")

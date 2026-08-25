@@ -279,3 +279,23 @@ def frequentist_asymmetry(null_sims, asym_sims, cov, theta0, A, D0,
                 sigma_null=sigma_null, sigma_asym=sigma_asym,
                 b0=b0, sigma_pair=sigma_pair, err_mean=err_mean,
                 det_persky=det_persky, sig_mean=sig_mean, hesse=hesse)
+
+def chi2_goodness_of_fit(sims, cov, A, D0, nsims_cov=None):
+    """
+    Distribution chi2 of each simulation vs the best-fit LCDM per sky. 
+    """
+    sims = np.asarray(sims, float)
+    nbin = sims.shape[1]
+    est = linear_estimator(cov, A, nsims_cov)
+    Cinv, M = est["Cinv"], est["M"]
+    P = np.eye(nbin) - A @ M
+    resid = (sims - D0[None, :]) @ P.T
+    return np.einsum("ij,jk,ik->i", resid, Cinv, resid)
+
+def derive_Omega_m(fits, omnuh2=0.000645):
+    """
+    Omega_m = (ombh2 + omch2 + omnuh2)/h^2 per sky
+    """
+    fits = np.asarray(fits, float)
+    H0, ob, oc = fits[:, 0], fits[:, 1], fits[:, 2]
+    return (ob + oc + omnuh2) / (H0/100.0)**2

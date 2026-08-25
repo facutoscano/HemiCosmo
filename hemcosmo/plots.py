@@ -9,7 +9,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from .config import PARAM_LABELS
+from scipy.stats import chi2 as _c2
 
+matplotlib.rcParams["savefig.dpi"] = 200
+matplotlib.rcParams["pdf.fonttype"] = 42
 
 def plot_bandpowers(ells, data_dl, model_dl, sigma, outpath, title=""):
     """
@@ -238,31 +241,25 @@ def plot_asym_fit_distribution(fits_null, fits_asym, north_vec, south_vec,
     the null (A=B=fiducial, grey) and the mixed sky (red), with the North and
     South input truths, the fiducial, and the null baseline overlaid
     """
-    fits_null = np.asarray(fits_null, float)
-    fits_asym = np.asarray(fits_asym, float)
-    n = len(PARAM_LABELS)
-    fig, axes = plt.subplots(1, n, figsize=(2.7 * n, 3.9))
+    fits_null = np.asarray(fits_null, float); fits_asym = np.asarray(fits_asym, float)
+    ncol = fits_null.shape[1]
+    fig, axes = plt.subplots(1, ncol, figsize=(2.7*ncol, 3.9))
     for i, ax in enumerate(axes):
         cn, ca = fits_null[:, i], fits_asym[:, i]
-        lo = min(cn.min(), ca.min(), north_vec[i], south_vec[i])
-        hi = max(cn.max(), ca.max(), north_vec[i], south_vec[i])
+        lo = min(cn.min(), ca.min()); hi = max(cn.max(), ca.max())
         bins = np.linspace(lo, hi, 32)
         ax.hist(cn, bins=bins, density=True, color="0.6", alpha=0.65, label="Baseline")
         ax.hist(ca, bins=bins, density=True, color="#c1121f", alpha=0.55, label="Mixed")
-        ax.axvline(north_vec[i], color="#1d6fb8", lw=1.6, label="North")
-        ax.axvline(south_vec[i], color="#7a1020", lw=1.6, label="South")
-        ax.axvline(fid_vec[i], color="k", ls="--", lw=1, label="fiducial")
-        if baseline_vec is not None:
+        if np.isfinite(truths_north[i]): ax.axvline(truths_north[i], color="#1d6fb8", lw=1.6, label="North")
+        if np.isfinite(truths_south[i]): ax.axvline(truths_south[i], color="#7a1020", lw=1.6, label="South")
+        if np.isfinite(truths_fid[i]):   ax.axvline(truths_fid[i], color="k", ls="--", lw=1, label="fiducial")
+        if baseline_vec is not None and np.isfinite(baseline_vec[i]):
             ax.axvline(baseline_vec[i], color="k", ls=":", lw=1.2, label="baseline")
-        ax.set_title(PARAM_LABELS[i], fontsize=10)
-        ax.set_yticks([])
+        ax.set_title(labels[i], fontsize=10); ax.set_yticks([])
     axes[0].legend(fontsize=6.5, loc="best")
-    if title:
-        fig.suptitle(title)
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
-    fig.savefig(outpath, bbox_inches="tight")
-    plt.close(fig)
-    print(f"[plots] saved {outpath}")
+    if title: fig.suptitle(title)
+    fig.tight_layout(rect=[0,0,1,0.94]); fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig); print(f"[plots] saved {outpath}")
 
 def plot_bandpowers_asym(ells, data_dl, model_dl, sigma, bp_north, bp_south,
                          outpath, title=""):
@@ -286,5 +283,35 @@ def plot_bandpowers_asym(ells, data_dl, model_dl, sigma, bp_north, bp_south,
     ax[1].set_ylabel(r"$\Delta/\sigma$"); ax[1].set_xlabel(r"$\ell$")
     ax[1].set_ylim(-5,5)
     ax[1].legend(fontsize=7, ncol=3); ax[1].grid(alpha=0.3)
+    fig.savefig(outpath, bbox_inches="tight"); plt.close(fig)
+    print(f"[plots] saved {outpath}")
+
+def plot_detectability_dual(chi2_vs_fid_null, chi2_vs_fid_asym,
+                            chi2_gof_null, chi2_gof_asym, nbin,
+                            outpath, title="", label_asym="mixed sky"):
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    def _panel(ax, cn, ca, ndof, xlabel, question):
+        lim = np.percentile(cn, 95)
+        power = float(np.mean(ca > lim))
+        lo = min(cn.min(), ca.min()); hi = max(cn.max(), ca.max())
+        bins = np.linspace(lo, hi, 40)
+        ax.hist(cn, bins=bins, density=True, alpha=0.55, color="#1d6fb8", label="A=B=fiducial")
+        ax.hist(ca, bins=bins, density=True, alpha=0.55, color="#c1121f", label=label_asym)
+        ax.axvline(lim, color="k", ls="--", lw=1.5, label="null 95%")
+        xx = np.linspace(lo, hi, 400)
+        ax.plot(xx, _c2.pdf(xx, df=ndof), "k-", lw=1, alpha=0.6, label=rf"$\chi^2_{{{ndof}}}$")
+        ax.set_xlabel(xlabel); ax.set_ylabel("density")
+        ax.set_title(f"{question}\npower@95% = {power:.2f}", fontsize=10)
+        ax.legend(fontsize=8); ax.grid(alpha=0.3)
+
+    _panel(axes[0], chi2_vs_fid_null, chi2_vs_fid_asym, nbin,
+           r"$\chi^2$ vs assumed fiducial",
+           "Can the mixed sky look like the fiducial?")
+    _panel(axes[1], chi2_gof_null, chi2_gof_asym, nbin-5,
+           r"$\chi^2$ vs per-sky best-fit LCDM",
+           "Does the mixed sky pass as a good LCDM fit?")
+    if title: fig.suptitle(title)
+    fig.tight_layout(rect=[0,0,1,0.94])
     fig.savefig(outpath, bbox_inches="tight"); plt.close(fig)
     print(f"[plots] saved {outpath}")

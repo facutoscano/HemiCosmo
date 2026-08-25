@@ -72,7 +72,7 @@ def cosmo_from_fit(H0, ombh2, omch2, ns, As_tau, tau, name="") -> Cosmology:
 # Planck 2018 base (Only TT)
 FIDUCIAL = Cosmology(H0=66.88, ombh2=0.02212, omch2=0.1206,
                      ns=0.9626, As=2.092e-9, tau=0.0522, name="fiducial")
-
+OMNUH2_FIDUCIAL = 0.000645
 rng = np.random.default_rng()
 
 # Preset "anomalous" cosmologies for the asymmetric-sky tests (fiducial with one or more parameters pushed to extreme values).
@@ -83,7 +83,7 @@ PRESETS = {
     "red_ns":  replace(FIDUCIAL, ns=0.92, name="red_ns"),         
     "blue_ns": replace(FIDUCIAL, ns=1.00, name="blue_ns"), 
     "high_oc": replace(FIDUCIAL, omch2=0.135, name="high_oc"),
-    "DESI-like": replace(FIDUCIAL, H0=69., name='DESI-like'),
+    "DESI-like": replace(FIDUCIAL, H0=67.9, name='DESI-like'),
     "random": replace(FIDUCIAL, H0=rng.uniform(60.,80.), ombh2=rng.uniform(0.015,0.030), omch2=rng.uniform(0.1,0.18), ns=rng.uniform(0.95,0.999), As=rng.uniform(2e-9,2.15e-9), name="random"),
 }
 
