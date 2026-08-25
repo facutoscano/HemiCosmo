@@ -1,16 +1,8 @@
 """
-NaMaster tools.
-
-Conventions:
-* Everything returns *binned D_l* bandpowers (D_l = l(l+1)C_l/2pi)
-
-* A single workspace / binning spans [lmin, lmax] with width delta_l. 
-  
-* Beam: if a harmonic beam 'beam' (b_l) is supplied it is applied to the theory
-  only (the maps are expected to be pre-smoothed by the same beam), so data and
-  model carry b_l^2 consistently.
-
-* NaMaster applies the mask internally, so the map must NOT be pre-multiplied by the mask.
+Power Spectrum Module:
+-Binning / lmax selection / change to Dl
+-Workspace for Namaster
+-Bandpowers for observations and theory
 """
 
 from __future__ import annotations
@@ -43,7 +35,6 @@ def dl_factor(binning: nmt.NmtBin) -> np.ndarray:
     ell = binning.get_effective_ells()
     return ell * (ell + 1) / (2.0 * np.pi)
 
-
 def get_workspace(mask: np.ndarray, binning: nmt.NmtBin, cfg: RunConfig,
                   verbose: bool = True) -> nmt.NmtWorkspace:
     wsp_file = os.path.join(cfg.cache_dir, f"workspace_{cfg.geom_key()}.fits")
@@ -63,7 +54,6 @@ def get_workspace(mask: np.ndarray, binning: nmt.NmtBin, cfg: RunConfig,
         print(f"[spectra] saved workspace {wsp_file}")
     return wsp
 
-
 def bandpowers_from_map(map_in: np.ndarray, mask: np.ndarray,
                         wsp: nmt.NmtWorkspace, binning: nmt.NmtBin) -> np.ndarray:
     """
@@ -73,7 +63,6 @@ def bandpowers_from_map(map_in: np.ndarray, mask: np.ndarray,
     cl_coupled = nmt.compute_coupled_cell(field, field)
     cl_dec = wsp.decouple_cell(cl_coupled)[0]
     return cl_dec * dl_factor(binning)
-
 
 def bandpowers_from_theory(cl: np.ndarray, wsp: nmt.NmtWorkspace,
                            binning: nmt.NmtBin, beam=None) -> np.ndarray:
@@ -85,7 +74,6 @@ def bandpowers_from_theory(cl: np.ndarray, wsp: nmt.NmtWorkspace,
         clb = clb * beam**2
     cl_dec = wsp.decouple_cell(wsp.couple_cell([clb]))[0]
     return cl_dec * dl_factor(binning)
-
 
 def bin_selection(binning: nmt.NmtBin, lo: float, hi: float) -> np.ndarray:
     ell = binning.get_effective_ells()

@@ -1,7 +1,11 @@
 """
-Configuration and reference cosmologies.
-
-Parameters: H0, ombh2, omch2, ns, 1e9*As*exp(-2*tau)
+General settings:
+-Data / Project / Results / Cache folders
+-Parameters: H0, ombh2, omch2, ns, 1e9*As*exp(-2*tau)
+-Cosmology as a class
+-Planck18 as the fiducial cosmology
+-PRESETS configuration to vary the skies
+-RunConfig
 """
 
 from __future__ import annotations

@@ -1,10 +1,9 @@
 """
-Gaussian chi^2 likelihood and iminuit fit in the [H0, ombh2, omch2, ns, As_tau]
-basis, with a Hartlap-corrected inverse covariance.
+Likelihood module:
+-Estimates the Hartlap factor
+-Estimates the chi-squared likelihood with iminuit
 
-The chi^2 function returns the full chi^2, so 'errordef' must be 1.0.
-'bin_sel' selects a subset of the common binning for ell-cut studies; the
-  theory is evaluated on the full binning and then subset.
+---Uses the Theory/Spectrum modules---
 """
 
 from __future__ import annotations

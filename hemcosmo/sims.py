@@ -1,13 +1,11 @@
 """
-Composite-sky bandpower simulations.
+Simulation module:
+-Defines parallelization
+-Creates the seeds and then the simulations
+-Returns the classes and covariance of the simulations
+-Saves the simulations to an .npz file and is incremental
 
-Each realization draws two Gaussian full-sky maps (same primordial phases in 'shared' mode)
-Blends them with the Galactic window, 
-Removes the monopole, 
-Returns the decoupled D_l bandpowers over the full binning.
-
-Results are cached to .npz keyed by config + both cosmologies, so re-runs and
-larger sim counts are incremental.
+---Uses the Theory/Mask/Spectrum modules---
 """
 
 from __future__ import annotations

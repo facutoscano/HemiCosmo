@@ -1,19 +1,26 @@
 """
-Asymmetric sky bias.
+Hemisphere script with different PRESETS:
 
-North hemisphere = cosmology A, South = cosmology B (split at Galactic b=0,
-observed through the common mask). We:
+Here, the Northern Hemisphere uses Cosmology A (generally fiducial) and the Southern Hemisphere uses Cosmology B.
+The split occurs at b=0, due to the necessary use of the Common Mask
 
-  * build the null covariance from fiducial/fiducial sims,
-  * generate composite-sky sims (A north, B south),
-  * fit ONE full-sky LambdaCDM to the mean bandpowers -> the effective
-    parameters a standard analysis would report, and the bias vs fiducial,
-  * quantify how badly (or not) a single LambdaCDM absorbs the mixed spectrum,
-  * measure the detectability of the asymmetry against the null chi^2.
+The following are constructed:
+-Covariance of fiducial/fiducial simulations
+-North A / South B simulations
+-Fitting of a full-sky LCDM model to the mean bandpower values
+
+The following are reported:
+-Bias vs. fiducial
+-Bias vs. baseline (fiducial processed by the code, --phase_mode independent)
+-Detectability relative to the fiducial
+-Detectability relative to an effective LCDM fit
+
+---The following modules are used: Theory/Masks/Spectrum/Simulations/Likelihood/Linear Response/Plots/Analysis---
 
 Run with:
-python scripts/run_asymmetry.py --north fiducial --south high_H0 --nside 512 --delta_l 30 --lmin 32 --lmax 900 --apod 1. --blend 3. --beam 0.0 --nsims 300 --n_threads 30 --phase_mode independent
+python scripts/run_asymmetry.py --north fiducial --south 74H0 --nside 1024 --delta_l 30 --lmin 32 --apod 1. --blend 3. --beam 0.0 --nsims 1000 --n_threads 30 --phase_mode independent --minuit
 """
+
 import os
 import sys
 import argparse

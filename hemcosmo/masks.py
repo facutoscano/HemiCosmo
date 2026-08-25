@@ -1,15 +1,9 @@
 """
-Common Mask and the North/South Galactic partition window.
-
-1. 'load_common_mask': the Planck common mask, downgraded to the
-   working nside, binarized and apodized (C2 apotype). Cached to disk.
-
-2. 'galactic_hemisphere_weight': a smooth partition weight W(b) for
-   the northern Galactic hemisphere, with south weight = 1 - W. Because
-   W + (1 - W) = 1, the composite map  W*m_north + (1-W)*m_south
-   has no amplitude artefact.
-
-All maps are treated directly in Galactic HEALPix pixelization so no coordinate rotation is needed: b = 90deg - theta.
+Mask Module:
+-Reading the Common Mask from Planck2018 for temperature
+-Creating a mask that separates the galactic north and south with weights W and 1-W, respectively
+-Subtracting the monopole
+-Applying hp.pixwin
 """
 
 from __future__ import annotations

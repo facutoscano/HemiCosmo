@@ -1,5 +1,10 @@
 """
-Diagnostic plots
+Plotting Module:
+-Plots the bandpowers
+-Plots the difference between the global fit and the North/South values
+-Plots validation for different phases
+-Plots chi-squared distributions
+-Plots frequentist distributions
 """
 
 from __future__ import annotations
@@ -71,59 +76,6 @@ def plot_global_vs_hemispheres(fit_values, fit_errors, north_vec, south_vec,
     fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
     print(f"[plots] saved {outpath}")
-
-
-def plot_ellscan(xvals, values, errors, north_vec, south_vec, outpath,
-                 fid_vec=None, mode="lmax", title=""):
-    """
-    One panel per parameter: the recovered global value (with 1 sigma band)
-    as a function of the analysis cut, against the North / South input lines
-    """
-    n = len(PARAM_LABELS)
-    ncol = 3
-    nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol, 3.2 * nrow))
-    axes = np.atleast_1d(axes).ravel()
-    for i in range(n):
-        ax = axes[i]
-        ax.axhline(north_vec[i], color="#1d6fb8", lw=1.8, label="North input")
-        ax.axhline(south_vec[i], color="#c1121f", lw=1.8, label="South input")
-        if fid_vec is not None:
-            ax.axhline(fid_vec[i], color="k", ls="--", lw=1, label="fiducial")
-        ax.fill_between(xvals, values[:, i] - errors[:, i],
-                        values[:, i] + errors[:, i], color="0.6", alpha=0.35)
-        ax.plot(xvals, values[:, i], "ko-", ms=4, label="global fit")
-        ax.set_title(PARAM_LABELS[i])
-        ax.set_xlabel(rf"analysis $\ell_\mathrm{{{mode[1:]}}}$")
-    for j in range(n, len(axes)):
-        axes[j].axis("off")
-    axes[0].legend(fontsize=8, loc="best")
-    if title:
-        fig.suptitle(title)
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(outpath, bbox_inches="tight")
-    plt.close(fig)
-    print(f"[plots] saved {outpath}")
-
-
-def plot_corner(samples, truths=None, outpath=None, title=""):
-    """
-    Corner plot 
-    """
-    try:
-        import corner
-    except ImportError:
-        print("[plots] corner not installed; skipping corner plot")
-        return
-    fig = corner.corner(samples, labels=PARAM_LABELS, truths=truths,
-                        quantiles=[0.16, 0.5, 0.84], show_titles=True)
-    if title:
-        fig.suptitle(title)
-    if outpath:
-        fig.savefig(outpath, bbox_inches="tight")
-        print(f"[plots] saved {outpath}")
-    plt.close(fig)
-
 
 def plot_phase_mode_comparison(values_shared, errors_shared, values_indep,
                                errors_indep, fid_vec, outpath, title=""):

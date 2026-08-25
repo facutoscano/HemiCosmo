@@ -1,10 +1,11 @@
 """
-Linear-response fitting.
+Linear Minimization Module:
+-Models the bandpowers
+-Computes the Jacobian
+-Performs a linear chi-squared fit using the Good-Broyden method based on a Levenberg-Marquardt estimator
+-Estimates the Fisher bias
 
-Linearize the binned theory around a reference point using the good Broyden method.
-Using a Levenberg-Marquardt damping to optimize the chi2 function.
-Fisher bias to 
-Use 'likelihood.fit_bandpowers' (Minuit) for a nonlinear cross-check.
+---Uses the Theory/Spectrum/Likelihood modules---
 """
 
 from __future__ import annotations

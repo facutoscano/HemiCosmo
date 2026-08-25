@@ -1,7 +1,13 @@
 """
-Parameter-recovery / bias tables
-Goodness-of-fit
-Hemispherical-asymmetry hypothesis test.
+Analysis Module:
+-Estimates the p-value
+-Returns final tables
+-Defines a linear estimator
+-Defines a null statistic
+-Defines a frequentist statistic
+-Defines a chi-squared statistic
+-Defines goodness-of-fit
+-Derives Omega_m
 """
 
 from __future__ import annotations

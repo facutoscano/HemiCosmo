@@ -1,12 +1,13 @@
 """
-Validation (null test).
+Code Validation Script:
 
-Both hemispheres share the SAME (fiducial) cosmology. 
-We build the null covariance from simulations and check that a full-sky LambdaCDM fit recovers
-the input cosmology without bias, and that the chi^2 statistics are sane. 
+Both hemispheres have the same cosmology (Planck2018 fiducial).
+The hemispheric simulations are constructed, along with their covariance, and a check is performed to verify that an unbiased full-sky LCDM fit is recovered without bias in the cosmology.
 
-With --compare_phase_modes, the script also runs the phase_mode='independent' (uncorrelated North/South hemispheres, same fiducial cosmology on both
-sides) and reports the shift relative to the phase_mode='shared' null test.
+The --compare_phase_modes flag allows running phase_mode='independent', where North and South are uncorrelated hemispheres with the same reference cosmology, and reports the relative shift compared to phase_mode='shared', which is used in the null hypothesis test.
+For 'run_asymmetry', phase_mode='independent' is used, so it is important to check whether it introduces biases within the same cosmology.
+
+---Use the Theory/Masks/Spectrum/Simulations/Likelihood/Linear Response/Plots/Analysis modules---
 
 Run with:
 python scripts/run_validation.py --nside 1024 --delta_l 30 --lmin 32 --apod 1. --blend 3. --beam 0.0 --nsims 1000 --n_threads 30 --compare_phase_modes --minuit

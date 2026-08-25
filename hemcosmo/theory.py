@@ -1,9 +1,7 @@
 """
-CAMB wrapper: theoretical lensed TT power spectra for a Cosmology.
-
-All spectra are returned up to lmax, in muK^2. 
-dl=True returns D_l = l(l+1)C_l/2pi;
-dl=False returns C_l with l=0,1 set to zero.
+Theory Module:
+-Estimating Cls using CAMB
+-Estimating sigma8
 """
 
 from __future__ import annotations
