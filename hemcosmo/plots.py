@@ -234,8 +234,8 @@ def plot_fit_distribution(fits, truth_vec, hesse, outpath, title=""):
     plt.close(fig)
     print(f"[plots] saved {outpath}")
 
-def plot_asym_fit_distribution(fits_null, fits_asym, north_vec, south_vec,
-                               fid_vec, outpath, baseline_vec=None, title=""):
+def plot_asym_fit_distribution(fits_null, fits_asym, truths_north, truths_south, truths_fid,
+                               labels, outpath, baseline_vec=None, title=""):
     """
     One panel per parameter: histograms of the per-sim effective parameters for
     the null (A=B=fiducial, grey) and the mixed sky (red), with the North and
