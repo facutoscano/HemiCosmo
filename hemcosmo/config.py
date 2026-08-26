@@ -129,6 +129,8 @@ class RunConfig:
     cache_dir: str = CACHE_DIR
     seed: int = 1234
 
+    nomask: bool = False
+
     lmax_synth: int = field(init=False, default=0)
 
     def __post_init__(self):
@@ -154,10 +156,11 @@ class RunConfig:
         """
         Mask/binning geometry fingerprint (independent of phase_mode)
         """
+        nomask_suffix = '_nomask' if self.nomask else ''
         return (f"ns{self.nside}_dl{self.delta_l}_lmin{self.lmin}"
                 f"_lmaxM{self.lmax_maps}_lmaxA{self.lmax_analysis}"
                 f"_apod{self.apod_deg:g}_blend{self.blend_width_deg:g}"
-                f"_beam{self.beam_fwhm_deg:g}")
+                f"_beam{self.beam_fwhm_deg:g}{nomask_suffix}")
 
     def key(self) -> str:
         """

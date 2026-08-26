@@ -225,7 +225,6 @@ def frequentist_validation(sims, cov, theta0, A, D0, truth_vec,
                 bias_1sky=bias_1sky, bias_onmean=bias_onmean, truth=truth_vec)
 
 def frequentist_asymmetry(null_sims, asym_sims, cov, theta0, A, D0,
-                          north_vec, south_vec, fiducial_vec,
                           nsims_cov=None, param_names=None):
     """
     Frequentist asymmetric-sky bias: apply the frozen linear estimator to every
@@ -263,7 +262,7 @@ def frequentist_asymmetry(null_sims, asym_sims, cov, theta0, A, D0,
     print("\n" + "=" * width)
     print("FREQUENTIST ASYMMETRY: per-sim effective parameters & bias".center(width))
     print("-" * width)
-    print(f"  nsims = {n}   (frozen linear estimator at fiducial)")
+    print(f"  nsims = {n}   (frozen linear estimator at effective fit)")
     print(f"\n  {'param':>8} | {'mean_asym':>11} {'mean_null':>11} | "
           f"{'bias b0':>11} | {'per-sky':>8} | {'mean-eff':>9}")
     print(f"  {'':>8} | {'(effective)':>11} {'(baseline)':>11} | "

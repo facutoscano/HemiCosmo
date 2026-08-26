@@ -21,10 +21,12 @@ Run with:
 python scripts/run_asymmetry.py --north fiducial --south 74H0 --nside 1024 --delta_l 30 --lmin 32 --apod 1. --blend 3. --beam 0.0 --nsims 1000 --n_threads 30 --phase_mode independent --minuit
 """
 
+#%% Imports
 import os
 import sys
 import argparse
 import numpy as np
+import healpy
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -35,10 +37,11 @@ from hemcosmo.spectra import (make_binning, get_workspace, analysis_bin_sel, ban
 from hemcosmo.sims import get_or_generate_sims, covariance
 from hemcosmo.likelihood import fit_bandpowers, fit_to_dict, hartlap_factor
 from hemcosmo.response import compute_jacobian, linear_fit
-from hemcosmo.analysis import (bias_summary, hypothesis_test, frequentist_asymmetry, chi2_goodness_of_fit, derive_Omega_m)
+from hemcosmo.analysis import (bias_summary, hypothesis_test, frequentist_asymmetry, chi2_goodness_of_fit, derive_Omega_m, linear_estimator)
 from hemcosmo import plots
 
 
+#%% Pipeline
 def build_config(args) -> RunConfig:
     return RunConfig(nside=args.nside, 
                     delta_l=args.delta_l, 
@@ -46,7 +49,8 @@ def build_config(args) -> RunConfig:
                     lmax_analysis=args.lmax_analysis, 
                     apod_deg=args.apod, blend_width_deg=args.blend, beam_fwhm_deg=args.beam,
                     nsims=args.nsims, n_threads=args.n_threads, 
-                    phase_mode = args.phase_mode)
+                    phase_mode = args.phase_mode,
+                    nomask=args.nomask)
 
 
 def main(args):
@@ -61,8 +65,13 @@ def main(args):
     if cfg.phase_mode == "shared" and north.name != south.name:
         print("[asymmetry] WARNING: phase_mode='shared' with north != south")
 
+    if cfg.nomask:
+        mask = np.ones(hp.nside2npix(cfg.nside))
+        print("[mask] WARNING: No mask used. Apodization is not useful")
+    else:
+        mask = load_common_mask(cfg)
+        print("[mask] Planck PR3 Common Mask used")
 
-    mask = load_common_mask(cfg)
     binning = make_binning(cfg)
     wsp = get_workspace(mask, binning, cfg)
     sel = analysis_bin_sel(binning, cfg)
@@ -75,20 +84,22 @@ def main(args):
           f"(<= lmax_analysis={cfg.lmax_analysis})")
     
 
-    # --- null covariance + fiducial reference bandpowers ---
+    ### Simulations using fiducial/fiducial
+    #   Covariance and correlation matrix estimation
+    #   Theoretical Jacobian
     null_sims_full = get_or_generate_sims(cfg.nsims, FIDUCIAL, FIDUCIAL, cfg, mask, wsp, binning)
     null_sims = null_sims_full[:, sel]
+
     cov = covariance(null_sims)
     cinv = hartlap_factor(cfg.nsims, nbin) * np.linalg.inv(cov)
     sigma = np.sqrt(np.diag(cov))
     mean_null = null_sims.mean(axis=0)
 
-    # theory Jacobian around fiducial (D0 == fiducial bandpowers)
     theta0 = FIDUCIAL.as_vector()
     Dl_fid_full, A_full = compute_jacobian(theta0, FIDUCIAL.tau, wsp, binning, cfg, beam)
     Dl_fid, A = Dl_fid_full[sel], A_full[sel]
 
-    # effective LCDM fit to the phase_mode-matched null sky
+    ### Effective LCDM fit to the fiducial/fiducial mean sky
     if args.minuit:
         null_fit = fit_to_dict(fit_bandpowers(mean_null, cov, wsp, binning, cfg,
                                          FIDUCIAL.tau, nsims_cov=cfg.nsims, beam=beam, bin_sel=sel))
@@ -98,12 +109,12 @@ def main(args):
           + "  ".join(f"{n}={v:.4g}" for n, v in zip(
               ["H0", "ombh2", "omch2", "ns", "As_tau"], null_fit["values"])))
 
-    # --- asymmetric sims ---
+    ### Simulations using fiducial/south
     asym_sims_full = get_or_generate_sims(cfg.nsims, north, south, cfg, mask, wsp, binning)
     asym_sims = asym_sims_full[:,sel]
     mean_asym = asym_sims.mean(axis=0)
 
-    # --- fit effective full-sky LCDM to the mean asymmetric spectrum ---
+    ### Effective LCDM fit to the fiducial/south mean spectrum
     if args.minuit:
         fit = fit_to_dict(fit_bandpowers(mean_asym, cov, wsp, binning, cfg,
                                          FIDUCIAL.tau, nsims_cov=cfg.nsims, beam=beam, bin_sel=sel))
@@ -113,15 +124,20 @@ def main(args):
     cl_best = cosmology_to_cls(best_cosmo, cfg.lmax_synth, cfg.lens_potential_accuracy)
     model_best = bandpowers_from_theory(cl_best, wsp, binning, beam=beam)[sel]
 
-    # single-sky "systematic" misfit of the effective LCDM (noise-free residual)
+    ### Misfit of the effective LCDM with respect to the mean fiducial/south spectrum
     r = mean_asym - model_best
     sys_chi2 = float(r @ cinv @ r)
     ndof_param = nbin - 5
 
-    # --- FREQUENTIST ---
-    freq = frequentist_asymmetry(null_sims, asym_sims, cov, theta0, A, Dl_fid,
-                                 north.as_vector(), south.as_vector(),
-                                 FIDUCIAL.as_vector(), nsims_cov=cfg.nsims)
+
+    ### Frequentist analysis
+    #   Estimation of the gap between the Jacobian in the fiducial and the effective LCDM fit
+    Dl_eff_full, A_eff_full = compute_jacobian(fit['values'], FIDUCIAL.tau, wsp, binning, cfg, beam)
+    Dl_eff, A_eff = Dl_eff_full[sel], A_eff_full[sel]
+    freq = frequentist_asymmetry(null_sims, asym_sims, 
+                                 cov, fit['values'], 
+                                 A_eff, Dl_eff, 
+                                 nsims_cov=cfg.nsims)
  
     lin_gap = (freq["mean_asym_fit"] - fit["values"]) / fit["errors"]
     print("\n  [linearization check] (frozen-linear central) - (nonlinear fit), in Hesse sigma:")
@@ -131,36 +147,54 @@ def main(args):
               "that curvature matters. Trust the nonlinear (fit - baseline) for the CENTRAL "
               "value; the linear distribution still gives the correct SHAPE/scatter.")
 
-    bias_summary(freq["mean_asym_fit"], freq["sigma_null"], north, south, FIDUCIAL,
+    bias_summary(fit['values'], freq["sigma_asym"], north, south, FIDUCIAL,
                      chi2_val=sys_chi2, ndof=ndof_param,
-                     baseline_values = freq['mean_null_fit'],
+                     baseline_values = null_fit['values'],
                      baseline_errors=freq['sigma_null'],
                      baseline_label=f"Null baseline ")
  
-    # --- detectability: does the mixed sky reject the fiducial full-sky model? ---
+    ### Detectability: does the fiducial/south sky reject the fiducial full-sky model?
+    #   Estimation of chi^2 distributions
     rn = null_sims - Dl_fid
     ra = asym_sims - Dl_fid
     chi2_null = np.einsum("ij,jk,ik->i", rn, cinv, rn)
     chi2_asym = np.einsum("ij,jk,ik->i", ra, cinv, ra)
     lim95 = np.percentile(chi2_null, 95)
     power = float(np.mean(chi2_asym > lim95))
-    print("\n--- DETECTABILITY (mixed sky vs assumed fiducial cosmology) ---")
+    print("\n--- [DETECTABILITY] (fiducial/south sky vs assumed fiducial cosmology) ---")
     print(f"  null   chi^2 (vs fiducial): median={np.median(chi2_null):.1f}, 95%={lim95:.1f}")
-    print(f"  mixed  chi^2 (vs fiducial): median={np.median(chi2_asym):.1f}")
+    print(f"  fiducial/south  chi^2 (vs fiducial): median={np.median(chi2_asym):.1f}")
     print(f"  detection power @95%: {power:.2f}  "
           f"(fraction of single mixed skies that reject the fiducial)")
     hypothesis_test(chi2_null, np.median(chi2_asym), label="median mixed sky")
 
+    ### Detectability: Does the mixed sky pass as a good LCDM fit?
+    #   Estimation of chi^2 goodness of fit distribution
     chi2_gof_null = chi2_goodness_of_fit(null_sims, cov, A, Dl_fid, nsims_cov=cfg.nsims)
     chi2_gof_asym = chi2_goodness_of_fit(asym_sims, cov, A, Dl_fid, nsims_cov=cfg.nsims)
     lim95_gof = np.percentile(chi2_gof_null, 95)
     power_gof = float(np.mean(chi2_gof_asym > lim95_gof))
-    print("\n--- GOODNESS-OF-FIT DETECTABILITY (best-fit LCDM per sky) ---")
+    print("\n--- [GOODNESS-OF-FIT DETECTABILITY] (best-fit LCDM per sky) ---")
     print(f"  null  chi2: median={np.median(chi2_gof_null):.1f} (expect ~{nbin-5})")
-    print(f"  mixed chi2: median={np.median(chi2_gof_asym):.1f}")
+    print(f"  fiducial/south chi2: median={np.median(chi2_gof_asym):.1f}")
     print(f"  detection power @95% : {power_gof:.3f}  (expect ~0)")
- 
-    # Saving
+
+    ### Covariances Estimation
+    #   Null (already estimated) 
+    #   Mixed
+    #   Effective
+    theta_eff = fit['values']
+    eff = cosmo_from_fit(*theta_eff, FIDUCIAL.tau, name='effLCDM')
+    eff_sims = get_or_generate_sims(cfg.nsims, eff, eff, cfg, mask, wsp, binning)[:, sel]
+    cov_eff = covariance(eff_sims)
+    cov_mixed = covariance(asym_sims)
+    print("\n--- [COV] Analysis of Covariance ---")
+    for name, C in [('null', cov), ('eff', cov_eff), ('mixed', cov_mixed)]:
+        est = linear_estimator(C, A_eff, cfg.nsims)
+        central = theta_eff + est['M'] @ (mean_asym - Dl_eff)
+        print( name, np.round((central-theta_eff)/est['hesse'],3), np.round(est['hesse'], 4))
+
+    ### Saving
     tag = f"{north.name}_{south.name}"
     out = os.path.join(outdir, f"asym_{tag}_{cfg.key()}.npz")
     np.savez_compressed(out, ells=ells, mean_asym=mean_asym, cov=cov,
@@ -180,14 +214,15 @@ def main(args):
                         fiducial=FIDUCIAL.as_vector(), nsims=cfg.nsims)
     print(f"\n[asymmetry] saved {out}")
 
-    ## Derived Omega_m and sigma8 
+    ### Derivation of Omega_m and sigma8
+    #   fiducial / baseline / south truths for the derived parameters 
+    #   Theoretical fiducial/south bandpowers 
     Om_null = derive_Omega_m(freq["fits_null"], OMNUH2_FIDUCIAL)
     Om_asym = derive_Omega_m(freq["fits_asym"], OMNUH2_FIDUCIAL)
     s8_0, s8_grad = sigma8_gradient(theta0, FIDUCIAL.tau)
     s8_null = s8_0 + (freq["fits_null"] - theta0) @ s8_grad
     s8_asym = s8_0 + (freq["fits_asym"] - theta0) @ s8_grad
 
-    # fiducial / north / south truths for the derived params
     Om_fid = derive_Omega_m(FIDUCIAL.as_vector()[None, :], OMNUH2_FIDUCIAL)[0]
     Om_north = derive_Omega_m(north.as_vector()[None, :], OMNUH2_FIDUCIAL)[0]
     Om_south = derive_Omega_m(south.as_vector()[None, :], OMNUH2_FIDUCIAL)[0]
@@ -199,13 +234,12 @@ def main(args):
     print(f"[derived] sigma8 : null={s8_null.mean():.4f} mixed={s8_asym.mean():.4f} "
           f"(fid {s8_fid:.4f}, N {s8_north:.4f}, S {s8_south:.4f})")
 
-    ## Theoretical N/S bandpowers
     cl_n = cosmology_to_cls(north, cfg.lmax_synth, cfg.lens_potential_accuracy)
     cl_s = cosmology_to_cls(south, cfg.lmax_synth, cfg.lens_potential_accuracy)
     bp_north = bandpowers_from_theory(cl_n, wsp, binning, beam=beam)[sel]
     bp_south = bandpowers_from_theory(cl_s, wsp, binning, beam=beam)[sel]
 
-    ## Plotting
+    ### Plotting
     ext = "pdf"
     plots.plot_bandpowers_asym(
         ells, mean_asym, model_best, sigma, bp_north, bp_south,
@@ -236,7 +270,7 @@ def main(args):
         title=f"N={north.name}/S={south.name}", label_asym=f"N={north.name}/S={south.name}")
 
 
-#%% Main Pipeline 
+#%% Configuration
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Asymmetric-sky bias measurement.")
     p.add_argument("--north", type=str, default="fiducial", help="preset name or 'fiducial'")
@@ -257,4 +291,5 @@ if __name__ == "__main__":
     p.add_argument("--minuit", action="store_true",
                    help="use the (slow) nonlinear Minuit fit instead of linear response")
     p.add_argument("--phase_mode", choices=['shared', 'independent'], default='independent')
+    p.add_argument("--nomask", action='store_true')
     main(p.parse_args())
