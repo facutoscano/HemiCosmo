@@ -26,7 +26,7 @@ import os
 import sys
 import argparse
 import numpy as np
-import healpy
+import healpy as hp
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
