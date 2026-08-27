@@ -134,18 +134,23 @@ def main(args):
     #   Estimation of the gap between the Jacobian in the fiducial and the effective LCDM fit
     Dl_eff_full, A_eff_full = compute_jacobian(fit['values'], FIDUCIAL.tau, wsp, binning, cfg, beam)
     Dl_eff, A_eff = Dl_eff_full[sel], A_eff_full[sel]
-    freq = frequentist_asymmetry(null_sims, asym_sims, 
-                                 cov, fit['values'], 
-                                 A_eff, Dl_eff, 
+    freq = frequentist_asymmetry(null_sims, asym_sims,cov, 
+                                 theta0, A, Dl_fid,
+                                 fit['values'], A_eff, Dl_eff,
                                  nsims_cov=cfg.nsims)
  
     lin_gap = (freq["mean_asym_fit"] - fit["values"]) / fit["errors"]
+    lin_gap_null = (freq['mean_null_fit'] - null_fit['values']) / freq['sigma_null']
     print("\n  [linearization check] (frozen-linear central) - (nonlinear fit), in Hesse sigma:")
     print("   " + "  ".join(f"{n}={g:+.2f}" for n, g in zip(PARAM_NAMES, lin_gap)))
     if np.max(np.abs(lin_gap)) > 0.5:
-        print("   WARNING: |gap| > 0.5 sigma -- effective params far enough from fiducial "
-              "that curvature matters. Trust the nonlinear (fit - baseline) for the CENTRAL "
-              "value; the linear distribution still gives the correct SHAPE/scatter.")
+        print("   WARNING: |gap| > 0.5 sigma -- effective params far enough from fiducial")
+
+    print("\n  [linearization check] Fiducial (frozen-linear central) - (nonlinear fit), in Hesse sigma:")
+    print("   " + "  ".join(f"{n}={g:+.2f}" for n, g in zip(PARAM_NAMES, lin_gap_null)))
+    if np.max(np.abs(lin_gap_null)) > 0.5:
+        print("   WARNING: |gap| > 0.5 sigma -- effective params far enough from fiducial ")
+
 
     bias_summary(fit['values'], freq["sigma_asym"], north, south, FIDUCIAL,
                      chi2_val=sys_chi2, ndof=ndof_param,
@@ -184,7 +189,7 @@ def main(args):
     #   Mixed
     #   Effective
     theta_eff = fit['values']
-    eff = cosmo_from_fit(*theta_eff, FIDUCIAL.tau, name='effLCDM')
+    eff = cosmo_from_fit(*theta_eff, FIDUCIAL.tau)
     eff_sims = get_or_generate_sims(cfg.nsims, eff, eff, cfg, mask, wsp, binning)[:, sel]
     cov_eff = covariance(eff_sims)
     cov_mixed = covariance(asym_sims)
@@ -247,9 +252,9 @@ def main(args):
         title=f"N={north.name}/S={south.name}")
 
     plots.plot_global_vs_hemispheres(
-        freq["mean_asym_fit"], freq["sigma_asym"], north.as_vector(), south.as_vector(),
+        fit['values'], freq["sigma_asym"], north.as_vector(), south.as_vector(),
         os.path.join(outdir, f"asym_global_vs_hemis_{tag}_{cfg.key()}.{ext}"),
-        fid_vec=FIDUCIAL.as_vector(), baseline_vec=freq["mean_null_fit"],
+        fid_vec=FIDUCIAL.as_vector(), baseline_vec=null_fit['values'],
         title=f"N={north.name}/S={south.name}")
 
     cols_null = np.column_stack([freq["fits_null"], s8_null, Om_null])
@@ -258,7 +263,7 @@ def main(args):
     north7 = np.append(north.as_vector(), [s8_north, Om_north])
     south7 = np.append(south.as_vector(), [s8_south, Om_south])
     fid7   = np.append(FIDUCIAL.as_vector(), [s8_fid, Om_fid])
-    base7  = np.append(freq["mean_null_fit"], [s8_null.mean(), Om_null.mean()])
+    base7  = np.append(null_fit['values'], [s8_null.mean(), Om_null.mean()])
     plots.plot_asym_fit_distribution(
         cols_null, cols_asym, north7, south7, fid7, labels7,
         os.path.join(outdir, f"asym_fitdist_{tag}_{cfg.key()}.{ext}"),
