@@ -87,8 +87,11 @@ PRESETS = {
     "68H0": replace(FIDUCIAL, H0=68.5, name='68H0'),
     "65H0": replace(FIDUCIAL, H0=65.0, name='65H0'),
     "62H0": replace(FIDUCIAL, H0=62.0, name='62H0'),
-    "red_ns":  replace(FIDUCIAL, ns=0.92, name="red_ns"),         
-    "blue_ns": replace(FIDUCIAL, ns=1.00, name="blue_ns"), 
+    "092ns":  replace(FIDUCIAL, ns=0.92, name="092ns"),
+    "094ns":  replace(FIDUCIAL, ns=0.94, name="094ns"),
+    "096ns":  replace(FIDUCIAL, ns=0.96, name="096ns"),
+    "098ns":  replace(FIDUCIAL, ns=0.98, name="098ns"),         
+    "100ns": replace(FIDUCIAL, ns=1.00, name="100ns"), 
     "high_oc": replace(FIDUCIAL, omch2=0.135, name="high_oc"),
     "random": replace(FIDUCIAL, H0=rng.uniform(60.,80.), ombh2=rng.uniform(0.015,0.030), omch2=rng.uniform(0.1,0.18), ns=rng.uniform(0.95,0.999), As=rng.uniform(2e-9,2.15e-9), name="random"),
 }
