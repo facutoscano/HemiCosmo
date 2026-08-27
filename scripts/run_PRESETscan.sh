@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-"""
-A script designed to modify various skies and run them sequentially without having to do so manually.
-To run:
-chmod +x run_PRESETscan.sh
-nohup ./run_PRESETscan.sh > results/logs/scan_master.log 2>&1 &
-"""
+
+#A script designed to modify various skies and run them sequentially without having to do so manually.
+#To run:
+#chmod +x run_PRESETscan.sh
+#nohup ./run_PRESETscan.sh > results/logs/scan_master.log 2>&1 & 
+# or
+# ./scripts/run_PRESETscan.sh
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate hemicosmo
