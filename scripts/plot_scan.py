@@ -124,7 +124,7 @@ def main(args):
         ax.axhline(0, color="k", lw=0.8, ls=":")
         ax.axvline(0, color="k", lw=0.8, ls=":")
         ax.plot(dH0, Y_nl[:, p], "o-", color="#1d6fb8", ms=6, lw=1.4,
-                label="Nonlinear fit" if p == 0 else None, zorder=5)
+                label=r"$Eff \ \Lambda CDM$" if p == 0 else None, zorder=5)
         ax.plot(0, 0, "kx", ms=8, mew=1.6, zorder=6)
         if p == 0:
             smed = np.median(SIG[:, 0])
@@ -132,8 +132,8 @@ def main(args):
                     label=rf"$a_S\,\Delta H_0/\sigma$ ($a_S={a_S:.2f}$)")
             ax.legend(fontsize=8.5, loc="best")
         ax.set_title(PLOT_LABELS[p])
-        ax.set_xlabel(r"$H_0^{\rm base,\,in}-H_0^{\rm south}$")
-        ax.set_ylabel(r"$(\theta^{\rm base}-\hat\theta)/\sigma_{\rm asym}$")
+        ax.set_xlabel(r"$H_0^{\rm PR3}-H_0^{\rm south}$")
+        ax.set_ylabel(r"$(\theta^{\rm PR3}-\hat\theta^{\rm FIT})/\sigma_{\rm FIT}$")
         ax.grid(alpha=0.25)
 
     fig.suptitle("H0 scan",

@@ -31,7 +31,7 @@ def build_config(args) -> RunConfig:
     return RunConfig(nside=args.nside, delta_l=args.delta_l, lmin=args.lmin,
                      lmax_maps=args.lmax_maps, lmax_analysis=args.lmax_analysis,
                      apod_deg=args.apod, blend_width_deg=args.blend,
-                     beam_fwhm_deg=args.beam, phase_mode=args.phase_mode)
+                     beam_fwhm_deg=args.beam, phase_mode=args.phase_mode, nomask=args.nomask, seed=args.seed)
 
 
 def one_composite(cl_n, cl_s, cfg, Wn, Ws, mask, seed_n, seed_s):
@@ -109,4 +109,5 @@ if __name__ == "__main__":
     p.add_argument("--beam", type=float, default=0.0)
     p.add_argument("--phase_mode", choices=["shared", "independent"], default="independent")
     p.add_argument("--nomask", action="store_true", help="use ones(npix) instead of the common mask")
+    p.add_argument("--seed", type=int, default=None, help="Random seed. Leave empty for dynamic randomness.")
     main(p.parse_args())
