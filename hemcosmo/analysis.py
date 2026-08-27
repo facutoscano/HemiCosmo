@@ -245,7 +245,7 @@ def frequentist_asymmetry(null_sims, asym_sims, cov,
     est_a = linear_estimator(cov, A_a, nsims_cov)
 
     fits_null = theta_n[None, :] + (null_sims - D0_n[None, :]) @ est_n['M'].T
-    fits_asym = theta_a[None, :] + (asym_sims - D0_A[None, :]) @ est_a['M'].T
+    fits_asym = theta_a[None, :] + (asym_sims - D0_a[None, :]) @ est_a['M'].T
 
     mean_null_fit = fits_null.mean(0)
     mean_asym_fit = fits_asym.mean(0)
