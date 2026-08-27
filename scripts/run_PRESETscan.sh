@@ -10,7 +10,7 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate hemicosmo
 set -u
 
-SOUTHS=(74H0 71H0 68H0 65H0 62H0)
+SOUTHS=(092ns 094ns 096ns 098ns 100ns)
 LOGDIR="results/logs"
 mkdir -p "$LOGDIR"
 
