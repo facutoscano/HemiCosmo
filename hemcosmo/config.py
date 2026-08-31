@@ -92,7 +92,17 @@ PRESETS = {
     "096ns":  replace(FIDUCIAL, ns=0.96, name="096ns"),
     "098ns":  replace(FIDUCIAL, ns=0.98, name="098ns"),         
     "100ns": replace(FIDUCIAL, ns=1.00, name="100ns"), 
-    "high_oc": replace(FIDUCIAL, omch2=0.135, name="high_oc"),
+    "22omb": replace(FIDUCIAL, ombh2=0.022, name="22omb"),
+    "2204omb": replace(FIDUCIAL, ombh2=0.02204, name="2204omb"),
+    "2208omb": replace(FIDUCIAL, ombh2=0.02208, name="2208omb"),
+    "2212omb": replace(FIDUCIAL, ombh2=0.02212, name="2212omb"),
+    "2216omb": replace(FIDUCIAL, ombh2=0.02216, name="2216omb"),
+    "2220omb": replace(FIDUCIAL, ombh2=0.02220, name="2220omb"),
+    "1190omc": replace(FIDUCIAL, omch2=0.1190, name="1190omc"),
+    "1198omc": replace(FIDUCIAL, omch2=0.1198, name="1198omc"),
+    "1206omc": replace(FIDUCIAL, omch2=0.1206, name="1206omc"),
+    "1214omc": replace(FIDUCIAL, omch2=0.1214, name="1214omc"),
+    "1220omc": replace(FIDUCIAL, omch2=0.1220, name="1220omc"),
     "random": replace(FIDUCIAL, H0=rng.uniform(60.,80.), ombh2=rng.uniform(0.015,0.030), omch2=rng.uniform(0.1,0.18), ns=rng.uniform(0.95,0.999), As=rng.uniform(2e-9,2.15e-9), name="random"),
 }
 
