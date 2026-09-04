@@ -11,13 +11,13 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate hemicosmo
 set -u
 
-SOUTHS=(1150omc 1178omc 1206omc 1234omc 1262omc)
+SOUTHS=(215omb 218omb 221omb 224omb 227omb)
 LOGDIR="results/logs"
 mkdir -p "$LOGDIR"
 
 PY="python" 
 COMMON="--north fiducial --nside 1024 --delta_l 30 --lmin 32 --apod 1. \
-        --blend 3. --beam 0.0 --nsims 1000 --n_threads 30 \
+        --blend 3. --beam 0.0 --nsims 1000 --n_threads 10 \
         --phase_mode independent --minuit"
 
 for S in "${SOUTHS[@]}"; do
