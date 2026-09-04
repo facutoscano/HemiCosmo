@@ -11,7 +11,7 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate hemicosmo
 set -u
 
-SOUTHS=(22omb 2204omb 2208omb 2212omb 2216omb 2220omb)
+SOUTHS=(1190omc 1198omc 1206omc 1214omc 1220omc)
 LOGDIR="results/logs"
 mkdir -p "$LOGDIR"
 
