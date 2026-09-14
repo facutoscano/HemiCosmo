@@ -69,7 +69,7 @@ def _one_bandpower(cfg, mask, wsp, binning, Wn, Ws, cl_n, cl_s, fwhm,
 
 _WK: dict = {}
 def _init_worker(cfg, cl_n, cl_s):
-    mask = build_mask(cfg)
+    mask = build_mask(cfg, verbose=False)
     binning = make_binning(cfg)
     wsp = get_workspace(mask, binning, cfg, verbose=False)
     Wn = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=True)
