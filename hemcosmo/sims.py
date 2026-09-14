@@ -44,7 +44,7 @@ def resolve_workers(cfg: RunConfig) -> int:
                   f"capping at {ncpu} to avoid oversubscription.")
             w = ncpu
             return w
-    return max(1, ncpu )
+    return max(1, ncpu // 2 )
 
 
 def _make_seeds(cfg: RunConfig, n_new: int, offset: int):
