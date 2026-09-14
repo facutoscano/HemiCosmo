@@ -75,15 +75,9 @@ def _one_bandpower(cfg, mask, wsp, binning, Wn, Ws, cl_n, cl_s, fwhm,
     return bandpowers_from_map(comp, mask, wsp, binning)
 
 _WK: dict = {}
-def _init_worker(cfg, cl_n, cl_s):
-    for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
-               "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
-        os.environ[_v] = "1"
-
-    mask = build_mask(cfg, verbose=False)
+def _init_worker(cfg, cl_n, cl_s, mask, Wn):
     binning = make_binning(cfg)
     wsp = get_workspace(mask, binning, cfg, verbose=False)
-    Wn = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=True)
     _WK.update(cfg=cfg, mask=mask, binning=binning, wsp=wsp, Wn=Wn, Ws=1.0 - Wn,
                cl_n=cl_n, cl_s=cl_s,
                fwhm=np.radians(cfg.beam_fwhm_deg) if cfg.beam_fwhm_deg > 0 else 0.0)
@@ -126,6 +120,9 @@ def get_or_generate_sims(nsims: int, north: Cosmology, south: Cosmology,
     seeds = _make_seeds(cfg, n_new, offset=n_have)
     tasks = [(i, sn, ss) for i, (sn, ss) in enumerate(seeds)]
     workers = min(resolve_workers(cfg), n_new)
+
+    Wn = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=True)
+
     if verbose:
         print(f"[sims] generating {n_new} new sims (N={north.tag()}, "
               f"S={south.tag()}) on {workers} worker(s)")
@@ -133,7 +130,6 @@ def get_or_generate_sims(nsims: int, north: Cosmology, south: Cosmology,
     new_Cb = np.zeros((n_new, nbin))
     done = 0
     if workers <= 1:
-        Wn = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=True)
         fwhm = np.radians(cfg.beam_fwhm_deg) if cfg.beam_fwhm_deg > 0 else 0.0
         for i, sn, ss in tasks:
             new_Cb[i] = _one_bandpower(cfg, mask, wsp, binning, Wn, 1.0 - Wn,
@@ -142,9 +138,8 @@ def get_or_generate_sims(nsims: int, north: Cosmology, south: Cosmology,
             if verbose and done % 25 == 0:
                 print(f"[sims]   {done}/{n_new}")
     else:
-        ctx = mp.get_context('spawn')
-        with ProcessPoolExecutor(max_workers=workers, mp_context=ctx, initializer=_init_worker,
-                                 initargs=(cfg, cl_n, cl_s)) as ex:
+        with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker,
+                                 initargs=(cfg, cl_n, cl_s, mask, Wn)) as ex:
             for idx, cb in ex.map(_worker_task, tasks, chunksize=1):
                 new_Cb[idx] = cb
                 done += 1

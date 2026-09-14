@@ -23,6 +23,9 @@ python scripts/run_asymmetry.py --north fiducial --south 74H0 --nside 1024 --del
 
 #%% Imports
 import os
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
 import sys
 import argparse
 import numpy as np

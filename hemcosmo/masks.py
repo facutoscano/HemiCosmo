@@ -107,12 +107,24 @@ def build_mask(cfg: RunConfig, verbose: bool = True) -> np.ndarray:
     """
     use_naive = (cfg.naive_mask_h is not None) or (cfg.naive_mask_v is not None)
     if use_naive:
+        h = cfg.naive_mask_h if cfg.naive_mask_h is not None else -1
+        v = cfg.naive_mask_v if cfg.naive_mask_v is not None else -1
+
+        cache = os.path.join(
+            cfg.cache_dir,
+            f"naivemask_ns{cfg.nside}_h{h:g}_v{v:g}_l0{cfg.naive_l0_deg:g}"
+            f"_apod{cfg.apod_deg:g}.fits")
+        if os.path.exists(cache):
+            if verbose:
+                print(f"[masks] loading cached naive mask {cache}")
+            return hp.read_map(cache, dtype=np.float64)
         if verbose:
             print(f"[masks] naive bands h={cfg.naive_mask_h} v={cfg.naive_mask_v} "
                   f"l0={cfg.naive_l0_deg} (common mask NOT used)")
         m = naive_band_mask(cfg.nside, cfg.naive_mask_h, cfg.naive_mask_v, cfg.naive_l0_deg)
         if cfg.apod_deg > 0:
             m = nmt.mask_apodization(m, cfg.apod_deg, apotype="C2")
+        hp.write_map(cache, m, overwrite=True, dtype=np.float64)
         return m
     if cfg.nomask:
         if verbose:
