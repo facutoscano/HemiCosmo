@@ -10,6 +10,7 @@ Simulation module:
 
 from __future__ import annotations
 import os
+import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 import healpy as hp
@@ -35,9 +36,15 @@ def resolve_workers(cfg: RunConfig) -> int:
     """
     Number of parallel sim workers: cfg.n_threads or 50% of logical cores
     """
+    ncpu = os.cpu_count() or 2
     if cfg.n_threads and cfg.n_threads > 0:
-        return int(cfg.n_threads)
-    return max(1, (os.cpu_count() or 2) // 2)
+        w = int(cfg.n_threads)
+        if w > ncpu:
+            print(f"[sims] WARNING: n_threads={w} > logical CPUs={ncpu};"
+                  f"capping at {ncpu} to avoid oversubscription.")
+            w = ncpu
+            return w
+    return max(1, ncpu )
 
 
 def _make_seeds(cfg: RunConfig, n_new: int, offset: int):
@@ -69,6 +76,10 @@ def _one_bandpower(cfg, mask, wsp, binning, Wn, Ws, cl_n, cl_s, fwhm,
 
 _WK: dict = {}
 def _init_worker(cfg, cl_n, cl_s):
+    for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+               "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+        os.environ[_v] = "1"
+
     mask = build_mask(cfg, verbose=False)
     binning = make_binning(cfg)
     wsp = get_workspace(mask, binning, cfg, verbose=False)
@@ -76,12 +87,6 @@ def _init_worker(cfg, cl_n, cl_s):
     _WK.update(cfg=cfg, mask=mask, binning=binning, wsp=wsp, Wn=Wn, Ws=1.0 - Wn,
                cl_n=cl_n, cl_s=cl_s,
                fwhm=np.radians(cfg.beam_fwhm_deg) if cfg.beam_fwhm_deg > 0 else 0.0)
-
-
-def load_common_mask_silent(cfg):
-    from .masks import load_common_mask
-    return load_common_mask(cfg, verbose=False)
-
 
 def _worker_task(task):
     idx, seed_n, seed_s = task
@@ -91,7 +96,6 @@ def _worker_task(task):
         with threadpool_limits(limits=1):
             return idx, _one_bandpower(*args)
     return idx, _one_bandpower(*args)
-
 
 def get_or_generate_sims(nsims: int, north: Cosmology, south: Cosmology,
                          cfg: RunConfig, mask: np.ndarray, wsp, binning,
@@ -138,9 +142,10 @@ def get_or_generate_sims(nsims: int, north: Cosmology, south: Cosmology,
             if verbose and done % 25 == 0:
                 print(f"[sims]   {done}/{n_new}")
     else:
-        with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker,
+        ctx = mp.get_context('spawn')
+        with ProcessPoolExecutor(max_workers=workers, mp_context=ctx, initializer=_init_worker,
                                  initargs=(cfg, cl_n, cl_s)) as ex:
-            for idx, cb in ex.map(_worker_task, tasks):
+            for idx, cb in ex.map(_worker_task, tasks, chunksize=1):
                 new_Cb[idx] = cb
                 done += 1
                 if verbose and done % 25 == 0:

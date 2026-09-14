@@ -64,14 +64,12 @@ def main(args):
 
     tag = f"{north.name}_{south.name}"
     outdir = cfg.results_for(tag) 
+    ext = "pdf"
 
     if cfg.phase_mode == "shared" and north.name != south.name:
         print("[asymmetry] WARNING: phase_mode='shared' with north != south")
 
     mask = build_mask(cfg)
-    if cfg.phase_mode != "shared" and north.name != south.name \
-       and cfg.naive_mask_h is None and not cfg.nomask is False:
-        pass  
 
     use_naive = (cfg.naive_mask_h is not None) or (cfg.naive_mask_v is not None)
     if use_naive and north.name != south.name and cfg.naive_mask_h is None:
@@ -258,7 +256,6 @@ def main(args):
     bp_south = bandpowers_from_theory(cl_s, wsp, binning, beam=beam)[sel]
 
     ### Plotting
-    ext = "pdf"
     plots.plot_bandpowers_asym(
         ells, mean_asym, model_best, sigma, bp_north, bp_south,
         os.path.join(outdir, f"asym_bandpowers_{tag}_{cfg.key()}.{ext}"),
@@ -297,7 +294,7 @@ if __name__ == "__main__":
     p.add_argument("--delta_l", type=int, default=30)
     p.add_argument("--lmin", type=int, default=32)
     p.add_argument("--lmax_maps", type=int, default=None,
-                   help="workspace/binning band (default 2.1*nside)")
+                   help="workspace/binning band (default 2*nside)")
     p.add_argument("--lmax_analysis", type=int, default=None,
                    help="analysis cut used in the fit (default 1.5*nside)")
     p.add_argument("--apod", type=float, default=3.0)
