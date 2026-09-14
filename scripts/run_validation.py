@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from hemcosmo.config import RunConfig, FIDUCIAL, cosmo_from_fit
 from hemcosmo.config import PARAM_NAMES
 from hemcosmo.theory import cosmology_to_cls
-from hemcosmo.masks import load_common_mask, transfer_function
+from hemcosmo.masks import load_common_mask, transfer_function, build_mask
 from hemcosmo.spectra import (make_binning, get_workspace, analysis_bin_sel, bandpowers_from_theory)
 from hemcosmo.sims import get_or_generate_sims, covariance
 from hemcosmo.likelihood import fit_bandpowers, fit_to_dict, hartlap_factor
@@ -36,13 +36,16 @@ def build_config(args, phase_mode=None) -> RunConfig:
     return RunConfig(nside=args.nside, delta_l=args.delta_l, lmin=args.lmin,
                      lmax_maps=args.lmax_maps, lmax_analysis=args.lmax_analysis, apod_deg=args.apod, blend_width_deg=args.blend, beam_fwhm_deg=args.beam, nsims=args.nsims, 
                      n_threads=args.n_threads,
-                     phase_mode=phase_mode if phase_mode is not None else args.phase_mode)
+                     phase_mode=phase_mode if phase_mode is not None else args.phase_mode,
+                     naive_mask_v=args.naive_mask_v,
+                     naive_mask_h=args.naive_mask_h,
+                     naive_l0_deg=args.naive_l0)
 
 def compute_geometry(cfg: RunConfig):
     """
     Mask / binning / workspace / analysis-bin selection / beam
     """
-    mask = load_common_mask(cfg)
+    mask = build_mask(cfg)
     binning = make_binning(cfg)                 # full band up to lmax_maps
     wsp = get_workspace(mask, binning, cfg)
     sel = analysis_bin_sel(binning, cfg)        # effective_ell <= lmax_analysis
@@ -204,4 +207,9 @@ if __name__ == "__main__":
     p.add_argument("--phase_mode", choices=["shared", "independent"], default="shared", help="'shared' = null test (unbiased case). 'independent' = test for the hemisphere-stitching systematic. Ignored if --compare_phase_modes is set.")
     p.add_argument("--compare_phase_modes", action="store_true",
                    help="run both 'shared' and 'independent' branches and report/plot the parameter shift.")
+    p.add_argument("--naive_mask_h", type=float, default=None,
+                       help="width (deg) of an equatorial band; not common mask")
+    p.add_argument("--naive_mask_v", type=float, default=None,
+                       help="width (deg) of an meridian band")
+    p.add_argument("--naive_l0", type=float, default=0.0)
     main(p.parse_args())

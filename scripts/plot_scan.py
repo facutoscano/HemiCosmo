@@ -57,16 +57,14 @@ def aug6_vec(v5):
     return aug6_arr(np.asarray(v5, float)[None, :])[0]
 
 
-def effective_south_weight(nside, blend, apod):
+def effective_south_weight(nside, blend, apod, naive_h=None, naive_v=None, l0=0.0):
     """
-    a_S = <M^2 W_S^2>/<M^2> for the COMMON mask. Override with --aS for naive/nomask
+    a_S for the real mask (build_mask)
     """
-    from hemcosmo.masks import load_common_mask, galactic_hemisphere_weight
-    cfg = RunConfig(nside=nside, apod_deg=apod, blend_width_deg=blend)
-    M = load_common_mask(cfg, verbose=False)
-    Ws = galactic_hemisphere_weight(nside, blend, north=False)
-    m2 = M**2
-    return float(np.sum(m2 * Ws**2) / np.sum(m2))
+    from hemcosmo.masks import south_weight_from_cfg
+    cfg = RunConfig(nside=nside, apod_deg=apod, blend_width_deg=blend,
+                    naive_mask_h=naive_h, naive_mask_v=naive_v, naive_l0_deg=l0)
+    return south_weight_from_cfg(cfg)
 
 
 def bound_flags(vec5, frac=0.02):
@@ -141,7 +139,10 @@ def main(args):
         a_S = float(args.aS)
     else:
         try:
-            a_S = effective_south_weight(args.nside, args.blend, args.apod)
+            a_S = effective_south_weight(args.nside, args.blend, args.apod,
+                                         naive_h= args.naive_mask_h,
+                                         naive_v=args.naive_mask_v,
+                                         l0=args.naive_l0)
             print(f"[plot] a_S(common mask) = {a_S:.3f}")
         except Exception as e:
             a_S = 0.5
@@ -190,6 +191,13 @@ if __name__ == "__main__":
     p.add_argument("--apod", type=float, default=1.0)
     p.add_argument("--aS", type=float, default=None)
     p.add_argument("--out", type=str, default=None)
+    p.add_argument("--naive_mask_h", type=float, default=None,
+                       help="half-width (deg) of a masked equatorial band; disables the common mask")
+    p.add_argument("--naive_mask_v", type=float, default=None,
+                       help="half-width (deg) of a masked meridian band; disables the common mask")
+    p.add_argument("--naive_l0", type=float, default=0.0, help="longitude of the vertical band/meridian")
+    p.add_argument("--quadrants", action="store_true",
+                       help="report the 4-quadrant weights even without a vertical mask")
     args = p.parse_args()
     if args.out is None:
         args.out = os.path.join(RESULTS_DIR, f"{args.param}scan_response.png")

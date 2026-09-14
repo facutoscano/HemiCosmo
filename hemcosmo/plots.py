@@ -267,3 +267,29 @@ def plot_detectability_dual(chi2_vs_fid_null, chi2_vs_fid_asym,
     fig.tight_layout(rect=[0,0,1,0.94])
     fig.savefig(outpath, bbox_inches="tight"); plt.close(fig)
     print(f"[plots] saved {outpath}")
+
+def plot_correlation_matrices(cov_list, titles, outpath, ells=None, title=""):
+    """
+    Correlation matrix (normalized cov) in 1 row x N columns
+    """
+    n = len(cov_list)
+    fig, axes = plt.subplots(1, n, figsize=(4.8 * n, 4.4))
+    axes = np.atleast_1d(axes)
+    im = None
+    for ax, C, t in zip(axes, cov_list, titles):
+        d = np.sqrt(np.diag(C))
+        R = C / np.outer(d, d)
+        ext = None
+        if ells is not None:
+            ext = [ells.min(), ells.max(), ells.min(), ells.max()]
+        im = ax.imshow(R, origin="lower", vmin=-1, vmax=1, cmap="RdBu_r",
+                       extent=ext, aspect="equal")
+        ax.set_title(t, fontsize=10)
+        ax.set_xlabel(r"$\ell$" if ells is not None else "bin")
+    axes[0].set_ylabel(r"$\ell$" if ells is not None else "bin")
+    fig.colorbar(im, ax=axes.tolist(), fraction=0.046, pad=0.02, label="corr")
+    if title:
+        fig.suptitle(title)
+    fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[plots] saved {outpath}")

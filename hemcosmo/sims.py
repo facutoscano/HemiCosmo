@@ -15,7 +15,7 @@ import numpy as np
 import healpy as hp
 from .config import RunConfig, Cosmology
 from .theory import cosmology_to_cls
-from .masks import galactic_hemisphere_weight, subtract_monopole
+from .masks import galactic_hemisphere_weight, subtract_monopole, build_mask
 from .spectra import make_binning, get_workspace, bandpowers_from_map
 
 try:
@@ -69,7 +69,7 @@ def _one_bandpower(cfg, mask, wsp, binning, Wn, Ws, cl_n, cl_s, fwhm,
 
 _WK: dict = {}
 def _init_worker(cfg, cl_n, cl_s):
-    mask = load_common_mask_silent(cfg)
+    mask = build_mask(cfg)
     binning = make_binning(cfg)
     wsp = get_workspace(mask, binning, cfg, verbose=False)
     Wn = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=True)

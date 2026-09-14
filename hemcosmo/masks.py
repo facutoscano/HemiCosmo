@@ -78,3 +78,96 @@ def transfer_function(cfg: RunConfig) -> np.ndarray:
     if cfg.beam_fwhm_deg > 0:
         tl = tl * hp.gauss_beam(np.radians(cfg.beam_fwhm_deg), lmax=cfg.lmax_synth)
     return tl
+
+def naive_band_mask(nside, half_width_h_deg=None, half_width_v_deg=None,
+                    l0_deg=0.0) -> np.ndarray:
+    """
+    horizontal: |b| <= half_width_h_deg
+    vertical: l0 <= half_width_v_deg
+    Maximum circle distance 
+    """
+    npix = hp.nside2npix(nside)
+    theta, phi = hp.pix2ang(nside, np.arange(npix))
+    b = 90.0 - np.degrees(theta)
+    m = np.ones(npix)
+    if half_width_h_deg is not None and half_width_h_deg > 0:
+        m[np.abs(b) <= half_width_h_deg] = 0.0
+    if half_width_v_deg is not None and half_width_v_deg > 0:
+        d = np.degrees(np.abs(np.arcsin(
+            np.cos(np.radians(b)) * np.sin(phi - np.radians(l0_deg)))))
+        m[d <= half_width_v_deg] = 0.0
+    return m
+
+
+def build_mask(cfg: RunConfig, verbose: bool = True) -> np.ndarray:
+    """
+    Naive_masks
+    No_mask
+    Common_mask
+    """
+    use_naive = (cfg.naive_mask_h is not None) or (cfg.naive_mask_v is not None)
+    if use_naive:
+        if verbose:
+            print(f"[masks] naive bands h={cfg.naive_mask_h} v={cfg.naive_mask_v} "
+                  f"l0={cfg.naive_l0_deg} (common mask NOT used)")
+        m = naive_band_mask(cfg.nside, cfg.naive_mask_h, cfg.naive_mask_v, cfg.naive_l0_deg)
+        if cfg.apod_deg > 0:
+            m = nmt.mask_apodization(m, cfg.apod_deg, apotype="C2")
+        return m
+    if cfg.nomask:
+        if verbose:
+            print("[masks] nomask: full-sky ones")
+        return np.ones(hp.nside2npix(cfg.nside))
+    return load_common_mask(cfg, verbose=verbose)
+
+
+def meridian_weight(nside, blend_width_deg=5.0, l0_deg=0.0, east=True) -> np.ndarray:
+    """
+    Smooth partition E/W respect to the maximum circle (meridian) in l0.
+    s = distance of maximum circle with respect to the meridian l0; tanh(s/blend).
+    (|s| <= half_width_v)
+    """
+    npix = hp.nside2npix(nside)
+    theta, phi = hp.pix2ang(nside, np.arange(npix))
+    b = 90.0 - np.degrees(theta)
+    s = np.degrees(np.arcsin(np.cos(np.radians(b)) * np.sin(phi - np.radians(l0_deg))))
+    if blend_width_deg <= 0:
+        W = (s > 0).astype(np.float64)
+    else:
+        W = 0.5 * (1.0 + np.tanh(s / blend_width_deg))
+    return W if east else (1.0 - W)
+
+
+def region_weights(mask, windows) -> np.ndarray:
+    """
+    a_k = <M^2 W_k^2>/<M^2>.
+    'windows' is a list of maps W_k (same nside as 'mask')
+    """
+    m2 = np.asarray(mask, float) ** 2
+    denom = float(m2.sum())
+    return np.array([float((m2 * np.asarray(W, float) ** 2).sum() / denom)
+                     for W in windows])
+
+
+def hemisphere_windows(cfg: RunConfig) -> dict:
+    Wn = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=True)
+    return {"N": Wn, "S": 1.0 - Wn}
+
+
+def quadrant_windows(cfg: RunConfig, l0_deg=0.0) -> dict:
+    """
+    W_NE + W_NW + W_SE + W_SW = 1
+    """
+    Wn = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=True)
+    We = meridian_weight(cfg.nside, cfg.blend_width_deg, l0_deg, east=True)
+    Ws, Ww = 1.0 - Wn, 1.0 - We
+    return {"NE": Wn * We, "NW": Wn * Ww, "SE": Ws * We, "SW": Ws * Ww}
+
+
+def south_weight_from_cfg(cfg: RunConfig) -> float:
+    """
+    a_S of 2 regions with the real mask 
+    """
+    mask = build_mask(cfg, verbose=False)
+    Ws = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=False)
+    return region_weights(mask, [Ws])[0]

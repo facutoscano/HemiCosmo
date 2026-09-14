@@ -24,15 +24,45 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from hemcosmo.config import RunConfig, FIDUCIAL, get_cosmo  
 from hemcosmo.theory import cosmology_to_cls  
 from hemcosmo.masks import (load_common_mask, galactic_hemisphere_weight,
-                            subtract_monopole)
+                            subtract_monopole, build_mask, hemisphere_windows,
+                            quadrant_windows, 
+                            region_weights)
 
 
 def build_config(args) -> RunConfig:
     return RunConfig(nside=args.nside, delta_l=args.delta_l, lmin=args.lmin,
                      lmax_maps=args.lmax_maps, lmax_analysis=args.lmax_analysis,
                      apod_deg=args.apod, blend_width_deg=args.blend,
-                     beam_fwhm_deg=args.beam, phase_mode=args.phase_mode, nomask=args.nomask, seed=args.seed)
+                     beam_fwhm_deg=args.beam, phase_mode=args.phase_mode, nomask=args.nomask, seed=args.seed,
+                     naive_mask_h=args.naive_mask_h, naive_mask_v=args.naive_mask_v,
+                     naive_l0_deg=args.naive_l0)
 
+def mask_tag(cfg: RunConfig) -> str:
+    if cfg.naive_mask_h is not None or cfg.naive_mask_v is not None:
+        t = "naive"
+        if cfg.naive_mask_h is not None:
+            t += f"_H{cfg.naive_mask_h:g}"
+        if cfg.naive_mask_v is not None:
+            t += f"_V{cfg.naive_mask_v:g}l0{cfg.naive_l0_deg:g}"
+        return t
+    if cfg.nomask:
+        return "nomask"
+    return f"common_apod{cfg.apod_deg:g}"
+
+def report_weights(cfg: RunConfig, mask: np.ndarray, use_quadrants: bool) -> None:
+    hemi = hemisphere_windows(cfg)
+    aN, aS = region_weights(mask, [hemi["N"], hemi["S"]])
+    print(f"[weights] 2-region  a_N={aN:.4f}  a_S={aS:.4f}  "
+          f"(a_N+a_S={aN + aS:.4f}; deficit {1 - aN - aS:.4f} = stitching amplitude loss)")
+    print(f"[weights] plot_scan line should use  a_S = {aS:.4f}")
+    if use_quadrants:
+        quad = quadrant_windows(cfg, cfg.naive_l0_deg)
+        keys = ["NE", "NW", "SE", "SW"]
+        aq = region_weights(mask, [quad[k] for k in keys])
+        for k, a in zip(keys, aq):
+            print(f"[weights] quad a_{k}={a:.4f}")
+        print(f"[weights] sum S-quadrants a_SE+a_SW={aq[2] + aq[3]:.4f} "
+              f"(!= 2-region a_S={aS:.4f}; gap is the E/W blend)")
 
 def one_composite(cl_n, cl_s, cfg, Wn, Ws, mask, seed_n, seed_s):
     np.random.seed(seed_n)
@@ -44,7 +74,6 @@ def one_composite(cl_n, cl_s, cfg, Wn, Ws, mask, seed_n, seed_s):
         comp = hp.smoothing(comp, fwhm=np.radians(cfg.beam_fwhm_deg))
     return subtract_monopole(comp, mask)
 
-
 def main(args):
     cfg = build_config(args)
     north = get_cosmo(args.north)
@@ -52,21 +81,19 @@ def main(args):
     tag = f"{north.name}_{south.name}"
     outdir = cfg.results_for(tag)
 
-    if args.nomask:
-        mask = np.ones(hp.nside2npix(cfg.nside))
-        mask_tag = "nomask"
-        print("[maps] mask = ones(npix)  (full sky; seam at b=0 NOT hidden)")
-    else:
-        mask = load_common_mask(cfg)
-        mask_tag = f"apod{cfg.apod_deg:g}"
+    mask = build_mask(cfg)
+    mtag = mask_tag(cfg)
+
+    use_quadrants = args.quadrants or (cfg.naive_mask_v is not None)
+    report_weights(cfg, mask, use_quadrants)
 
     Wn = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=True)
     Ws = 1.0 - Wn
     cl_n = cosmology_to_cls(north, cfg.lmax_synth, cfg.lens_potential_accuracy)
     cl_s = cosmology_to_cls(south, cfg.lmax_synth, cfg.lens_potential_accuracy)
 
-    shared = (cfg.phase_mode == "shared")
-    rng = np.random.default_rng(cfg.seed)
+    shared = (cfg.phase_mode == 'shared')
+    rng = np.random.default_rng(cfg.seed if cfg.seed is not None else 0)
 
     maps = []
     for i in range(6):
@@ -88,8 +115,8 @@ def main(args):
         hp.graticule(dpar=30, dmer=30, alpha=0.25)
     fig.suptitle(f" N={north.name} / S={south.name}  "
                  f"(nside={cfg.nside}, blend={cfg.blend_width_deg:g}deg, "
-                 f" {mask_tag})", y=1.02, fontsize=13)
-    out = os.path.join(outdir, f"Maps_{tag}_{mask_tag}_ns{cfg.nside}.png")
+                 f" {mtag})", y=1.02, fontsize=13)
+    out = os.path.join(outdir, f"Maps_{tag}_{mtag}_ns{cfg.nside}.png")
     fig.savefig(out, bbox_inches="tight", dpi=120)
     plt.close(fig)
     print(f"[maps] saved {out}")
@@ -109,5 +136,12 @@ if __name__ == "__main__":
     p.add_argument("--beam", type=float, default=0.0)
     p.add_argument("--phase_mode", choices=["shared", "independent"], default="independent")
     p.add_argument("--nomask", action="store_true", help="use ones(npix) instead of the common mask")
-    p.add_argument("--seed", type=int, default=None, help="Random seed. Leave empty for dynamic randomness.")
+    p.add_argument("--naive_mask_h", type=float, default=None,
+                   help="half-width (deg) of a masked equatorial band; disables the common mask")
+    p.add_argument("--naive_mask_v", type=float, default=None,
+                   help="half-width (deg) of a masked meridian band; disables the common mask")
+    p.add_argument("--naive_l0", type=float, default=0.0, help="longitude of the vertical band/meridian")
+    p.add_argument("--quadrants", action="store_true",
+                   help="report the 4-quadrant weights even without a vertical mask")
+    p.add_argument("--seed", type=int, default=None, help="random seed (None -> 0 for reproducibility here)")
     main(p.parse_args())

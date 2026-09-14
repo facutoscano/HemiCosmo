@@ -147,6 +147,9 @@ class RunConfig:
     seed: int = 1234
 
     nomask: bool = False
+    naive_mask_h: float = None
+    naive_mask_v: float = None
+    naive_l0_deg: float = 0.0
 
     lmax_synth: int = field(init=False, default=0)
 
@@ -174,10 +177,16 @@ class RunConfig:
         Mask/binning geometry fingerprint (independent of phase_mode)
         """
         nomask_suffix = '_nomask' if self.nomask else ''
+        naive = ''
+        if self.naive_mask_h is not None:
+            naive += f'_maskH{self.naive_mask_h:g}'
+        if self.naive_mask_v is not None:
+            naive += f'_maskV{self.naive_mask_v:g}l0{self.naive_l0_deg:g}'
         return (f"ns{self.nside}_dl{self.delta_l}_lmin{self.lmin}"
                 f"_lmaxM{self.lmax_maps}_lmaxA{self.lmax_analysis}"
                 f"_apod{self.apod_deg:g}_blend{self.blend_width_deg:g}"
-                f"_beam{self.beam_fwhm_deg:g}{nomask_suffix}")
+                f"_beam{self.beam_fwhm_deg:g}"
+                f"{naive}{nomask_suffix}")
 
     def key(self) -> str:
         """

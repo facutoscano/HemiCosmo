@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hemcosmo.config import RunConfig, FIDUCIAL, PARAM_NAMES, get_cosmo, cosmo_from_fit, OMNUH2_FIDUCIAL, PARAM_LABELS
 from hemcosmo.theory import (cosmology_to_cls, cosmology_to_sigma8, sigma8_gradient)
-from hemcosmo.masks import load_common_mask, transfer_function
+from hemcosmo.masks import load_common_mask, transfer_function, build_mask
 from hemcosmo.spectra import (make_binning, get_workspace, analysis_bin_sel, bandpowers_from_theory)
 from hemcosmo.sims import get_or_generate_sims, covariance
 from hemcosmo.likelihood import fit_bandpowers, fit_to_dict, hartlap_factor
@@ -50,7 +50,10 @@ def build_config(args) -> RunConfig:
                     apod_deg=args.apod, blend_width_deg=args.blend, beam_fwhm_deg=args.beam,
                     nsims=args.nsims, n_threads=args.n_threads, 
                     phase_mode = args.phase_mode,
-                    nomask=args.nomask)
+                    nomask=args.nomask,
+                    naive_mask_v=args.naive_mask_v,
+                    naive_mask_h=args.naive_mask_h,
+                    naive_l0_deg=args.naive_l0)
 
 
 def main(args):
@@ -65,12 +68,15 @@ def main(args):
     if cfg.phase_mode == "shared" and north.name != south.name:
         print("[asymmetry] WARNING: phase_mode='shared' with north != south")
 
-    if cfg.nomask:
-        mask = np.ones(hp.nside2npix(cfg.nside))
-        print("[mask] WARNING: No mask used. Apodization is not useful")
-    else:
-        mask = load_common_mask(cfg)
-        print("[mask] Planck PR3 Common Mask used")
+    mask = build_mask(cfg)
+    if cfg.phase_mode != "shared" and north.name != south.name \
+       and cfg.naive_mask_h is None and not cfg.nomask is False:
+        pass  
+
+    use_naive = (cfg.naive_mask_h is not None) or (cfg.naive_mask_v is not None)
+    if use_naive and north.name != south.name and cfg.naive_mask_h is None:
+        print("[asymmetry] WARNING: naive mask without horizontal band ->"
+              "N/S in b=0 is coarse (systematic of stitching)")
 
     binning = make_binning(cfg)
     wsp = get_workspace(mask, binning, cfg)
@@ -193,11 +199,18 @@ def main(args):
     eff_sims = get_or_generate_sims(cfg.nsims, eff, eff, cfg, mask, wsp, binning)[:, sel]
     cov_eff = covariance(eff_sims)
     cov_mixed = covariance(asym_sims)
-    print("\n--- [COV] Analysis of Covariance ---")
-    for name, C in [('null', cov), ('eff', cov_eff), ('mixed', cov_mixed)]:
-        est = linear_estimator(C, A_eff, cfg.nsims)
-        central = theta_eff + est['M'] @ (mean_asym - Dl_eff)
-        print( name, np.round((central-theta_eff)/est['hesse'],3), np.round(est['hesse'], 4))
+    plots.plot_correlation_matrices(
+        [cov, cov_eff, cov_mixed],
+        ["null (PR3)", "effective", "mixed"],
+        os.path.join(outdir, f"asym_corr_{tag}_{cfg.key()}.{ext}"),
+        ells=ells, title=f"Correlation matrix  N={north.name}/S={south.name}")
+    print("\n--- [COV] Covariance Analysis ---")
+    for name, C in [('null(PR3)', cov), ('eff', cov_eff), ('mixed', cov_mixed)]:
+        rf = linear_fit(mean_asym, C, theta0, A.copy(), FIDUCIAL.tau, wsp, binning,
+                        cfg, beam=beam, nsims_cov=cfg.nsims, bin_sel=sel, verbose=False)
+        shift = (rf['values'] - theta_eff) / rf['errors']
+        print(f"  {name:>10}: " + "  ".join(
+            f"{n}={v:.4g}({s:+.2f}s)" for n, v, s in zip(PARAM_NAMES, rf['values'], shift)))
 
     ### Saving
     tag = f"{north.name}_{south.name}"
@@ -297,4 +310,9 @@ if __name__ == "__main__":
                    help="use the (slow) nonlinear Minuit fit instead of linear response")
     p.add_argument("--phase_mode", choices=['shared', 'independent'], default='independent')
     p.add_argument("--nomask", action='store_true')
+    p.add_argument("--naive_mask_h", type=float, default=None,
+                   help="width (deg) of an equatorial band; not common mask")
+    p.add_argument("--naive_mask_v", type=float, default=None,
+                   help="width (deg) of an meridian band")
+    p.add_argument("--naive_l0", type=float, default=0.0)
     main(p.parse_args())
