@@ -45,7 +45,7 @@ def compute_geometry(cfg: RunConfig):
     """
     Mask / binning / workspace / analysis-bin selection / beam
     """
-    mask = build_mask(cfg)
+    mask = build_mask(cfg, verbose=False)
     binning = make_binning(cfg)                 # full band up to lmax_maps
     wsp = get_workspace(mask, binning, cfg)
     sel = analysis_bin_sel(binning, cfg)        # effective_ell <= lmax_analysis
