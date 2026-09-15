@@ -11,14 +11,15 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate hemicosmo
 set -u
 
-SOUTHS=(215omb 218omb 221omb 224omb 227omb)
+SOUTHS=(62H0 65H0 68H0 71H0 74H0)
 LOGDIR="results/logs"
 mkdir -p "$LOGDIR"
 
 PY="python" 
 COMMON="--north fiducial --nside 1024 --delta_l 30 --lmin 32 --apod 1. \
-        --blend 3. --beam 0.0 --nsims 1000 --n_threads 10 \
-        --phase_mode independent --minuit"
+        --blend 3. --beam 0.0 --nsims 1000 --n_threads 30 \
+        --phase_mode independent --minuit \
+	--naive_mask_h 6"
 
 for S in "${SOUTHS[@]}"; do
     LOG="$LOGDIR/asym_fiducial_${S}_$(date +%Y%m%d_%H%M%S).log"
