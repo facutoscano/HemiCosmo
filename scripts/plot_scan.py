@@ -37,6 +37,11 @@ XLABEL = {"H0": r"$H_0^{\rm PR3}-H_0^{\rm S}$",
           "omch2": r"$\omega_c^{\rm PR3}-\omega_c^{\rm S}$",
           "ns": r"$n_s^{\rm PR3}-n_s^{\rm S}$",
           "As_tau": r"$A_s e^{-2\tau,\rm PR3}-A_s e^{-2\tau,\rm S}$"}
+PLINE = {"H0": r"$a_S\,\Delta H_0/\sigma$",
+         "ombh2": r"$a_S\,\Delta\omega_b/\sigma$",
+         "omch2": r"$a_S\,\Delta\omega_c/\sigma$",
+         "ns": r"$a_S\,\Delta n_s/\sigma$",
+         "As_tau": r"$a_S\,\Delta(A_s e^{-2\tau})/\sigma$"}
 
 # colours per mask geometry (common is always grey; others cycle)
 _MASK_COLORS = ["#1d6fb8", "#c1121f", "#2a9d3a", "#e08214", "#6a3d9a", "#00838f"]
@@ -54,6 +59,20 @@ def aug6_arr(fits5):
 
 def aug6_vec(v5):
     return aug6_arr(np.asarray(v5, float)[None, :])[0]
+
+
+def common_south_weight(nside, blend, apod):
+    """
+    a_S = <M^2 W_S^2>/<M^2> for the common mask geometry (build_mask).
+    Returns None if the mask can't be built here.
+    """
+    try:
+        from hemcosmo.masks import south_weight_from_cfg
+        cfg = RunConfig(nside=nside, apod_deg=apod, blend_width_deg=blend)
+        return south_weight_from_cfg(cfg)
+    except Exception as e:
+        print(f"[plot] common a_S unavailable ({e})")
+        return None
 
 
 def mask_tag_from_name(fname):
@@ -191,8 +210,24 @@ def main(args):
             color_for[tag] = _MASK_COLORS[ci % len(_MASK_COLORS)]
             ci += 1
 
+    # theory line for the COMMON mask (black dotted, reference). Needs a_S(common)
+    # and the common-mask sigma to set the slope; drawn only on the --param panel.
+    a_S_common = float(args.aS) if args.aS is not None else \
+        common_south_weight(args.nside, args.blend, args.apod)
+    if "common" in groups:
+        _, _, SIG_common = _series_for(groups["common"], pidx)
+        smed_common = np.median(SIG_common[:, panel])
+    else:
+        smed_common = None
+        print("[plot] no common-mask runs: cannot set the theory-line slope; "
+              "skipping the reference line.")
+
     fig, axes = plt.subplots(2, 3, figsize=(15, 8.5))
     axes = axes.ravel()
+
+    # x-range spanning all groups (for the theory line)
+    all_dth = np.concatenate([_series_for(groups[t], pidx)[0] for t in draw_order])
+    xline = np.array([min(all_dth.min(), 0.0), max(all_dth.max(), 0.0)])
 
     for p in range(6):
         ax = axes[p]
@@ -209,6 +244,12 @@ def main(args):
                     zorder=3 if is_common else 5, label=lbl)
 
         ax.plot(0, 0, "kx", ms=8, mew=1.6, zorder=6)
+
+        if p == panel and a_S_common is not None and smed_common is not None:
+            ax.plot(xline, (a_S_common / smed_common) * xline, "k:", lw=1.6,
+                    zorder=7,
+                    label=PLINE[args.param] + rf" (common, $a_S={a_S_common:.2f}$)")
+
         if p == panel:
             ax.legend(fontsize=8.5, loc="best")
         ax.set_title(PLOT_LABELS[p])
@@ -216,7 +257,8 @@ def main(args):
         ax.set_ylabel(r"$(\theta^{\rm PR3}-\hat\theta^{\rm FIT})/\sigma_{\rm FIT}$")
         ax.grid(alpha=0.25)
 
-    fig.suptitle(f"{args.param} scan  (one colour per mask geometry)", y=0.99)
+    fig.suptitle(f"{args.param} scan  (one colour per mask geometry; "
+                 f"black dotted = common-mask theory)", y=0.99)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     fig.savefig(args.out, bbox_inches="tight", dpi=140)
     print(f"[plot] saved {args.out}")
@@ -230,6 +272,9 @@ if __name__ == "__main__":
     p.add_argument("--nside", type=int, default=1024)
     p.add_argument("--blend", type=float, default=3.0)
     p.add_argument("--apod", type=float, default=1.0)
+    p.add_argument("--aS", type=float, default=None,
+                   help="override a_S(common) for the reference theory line "
+                        "(default: computed for the common mask)")
     p.add_argument("--out", type=str, default=None)
     p.add_argument("--quadrants", action="store_true",
                    help="report the 4-quadrant weights even without a vertical mask")
