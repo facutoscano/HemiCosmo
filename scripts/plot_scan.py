@@ -37,13 +37,8 @@ XLABEL = {"H0": r"$H_0^{\rm PR3}-H_0^{\rm S}$",
           "omch2": r"$\omega_c^{\rm PR3}-\omega_c^{\rm S}$",
           "ns": r"$n_s^{\rm PR3}-n_s^{\rm S}$",
           "As_tau": r"$A_s e^{-2\tau,\rm PR3}-A_s e^{-2\tau,\rm S}$"}
-PLINE = {"H0": r"$a_S\,\Delta H_0/\sigma$",
-         "ombh2": r"$a_S\,\Delta\omega_b/\sigma$",
-         "omch2": r"$a_S\,\Delta\omega_c/\sigma$",
-         "ns": r"$a_S\,\Delta n_s/\sigma$",
-         "As_tau": r"$a_S\,\Delta(A_s e^{-2\tau})/\sigma$"}
 
-# colours for non-common geometries (common is always grey)
+# colours per mask geometry (common is always grey; others cycle)
 _MASK_COLORS = ["#1d6fb8", "#c1121f", "#2a9d3a", "#e08214", "#6a3d9a", "#00838f"]
 _COMMON_COLOR = "0.55"
 
@@ -59,19 +54,6 @@ def aug6_arr(fits5):
 
 def aug6_vec(v5):
     return aug6_arr(np.asarray(v5, float)[None, :])[0]
-
-
-def effective_south_weight(nside, blend, apod, naive_h=None, naive_v=None,
-                           l0=0.0, nomask=False):
-    """
-    a_S for the requested mask geometry (build_mask). For nomask a_S -> the
-    hemisphere weight itself (full sky), computed the same way.
-    """
-    from hemcosmo.masks import south_weight_from_cfg
-    cfg = RunConfig(nside=nside, apod_deg=apod, blend_width_deg=blend,
-                    naive_mask_h=naive_h, naive_mask_v=naive_v, naive_l0_deg=l0,
-                    nomask=nomask)
-    return south_weight_from_cfg(cfg)
 
 
 def mask_tag_from_name(fname):
@@ -103,24 +85,6 @@ def mask_tag_from_name(fname):
     return ("_".join(parts) if parts else f"unknown[{rest}]"), phase
 
 
-def requested_mask_tag(args):
-    """
-    The canonical mask tag corresponding to the CLI flags -- what we highlight in
-    colour and draw the theory line for. Mirrors config.geom_key formatting (%g).
-    """
-    if args.nomask:
-        return "nomask"
-    use_naive = (args.naive_mask_h is not None) or (args.naive_mask_v is not None)
-    if not use_naive:
-        return "common"
-    parts = []
-    if args.naive_mask_h is not None:
-        parts.append(f"maskH{args.naive_mask_h:g}")
-    if args.naive_mask_v is not None:
-        parts.append(f"maskV{args.naive_mask_v:g}l0{args.naive_l0:g}")
-    return "_".join(parts)
-
-
 def bound_flags(vec5, frac=0.02):
     """
     Which parameters sit within `frac` of a LIMITS bound
@@ -137,7 +101,8 @@ def bound_flags(vec5, frac=0.02):
 def load_scan(results_dir, pidx):
     """
     All runs where North==fiducial and South differs ONLY in fit-index `pidx`,
-    tagged by mask geometry (parsed from the filename). No mask filtering here.
+    tagged by mask geometry (parsed from the filename). No mask filtering here --
+    every mask geometry present under results_dir is loaded.
     """
     fid = FIDUCIAL.as_vector()
     others = [i for i in range(5) if i != pidx]
@@ -184,27 +149,12 @@ def _series_for(runs, pidx):
     return dth, Y_nl, SIG
 
 
-def _a_S_for_tag(tag, args):
+def _mask_sort_key(tag):
     """
-    a_S for a given canonical mask tag, reconstructing the geometry from the tag.
-    Used for the theory line. Returns None if it can't be built.
+    Deterministic order so colours are stable across runs: common first, then
+    alphabetical.
     """
-    try:
-        if tag == "common":
-            return effective_south_weight(args.nside, args.blend, args.apod)
-        if tag == "nomask":
-            return effective_south_weight(args.nside, args.blend, args.apod,
-                                          nomask=True)
-        mh = re.search(r"maskH([-\d.eE+]+)", tag)
-        mv = re.search(r"maskV([-\d.eE+]+)l0([-\d.eE+]+)", tag)
-        return effective_south_weight(
-            args.nside, args.blend, args.apod,
-            naive_h=float(mh.group(1)) if mh else None,
-            naive_v=float(mv.group(1)) if mv else None,
-            l0=float(mv.group(2)) if mv else 0.0)
-    except Exception as e:
-        print(f"[plot] a_S for '{tag}' unavailable ({e})")
-        return None
+    return (0, "") if tag == "common" else (1, tag)
 
 
 def main(args):
@@ -217,7 +167,7 @@ def main(args):
     if not runs:
         raise SystemExit(f"No {args.param}-scan runs under {args.results_dir}.")
 
-    # group by mask geometry
+    # group by mask geometry -- every mask present gets its own colour
     groups = {}
     for r in runs:
         groups.setdefault(r["mask"], []).append(r)
@@ -226,56 +176,23 @@ def main(args):
         if hf or hb:
             print(f"[plot] WARNING railed fit {os.path.basename(r['file'])}: "
                   f"asym->{hf} null->{hb}")
+
+    draw_order = sorted(groups.keys(), key=_mask_sort_key)
     print(f"[plot] mask groups found: "
-          + ", ".join(f"{k}({len(v)})" for k, v in sorted(groups.items())))
+          + ", ".join(f"{k}({len(groups[k])})" for k in draw_order))
 
-    req = requested_mask_tag(args)
-    print(f"[plot] requested (highlighted) mask = '{req}'")
-    if req not in groups:
-        print(f"[plot] WARNING: no runs found for requested mask '{req}'. "
-              f"Only the common reference (if present) will be drawn.")
-
-    # which masks get drawn: always common (grey), plus the requested one.
-    draw_order = []
-    if "common" in groups:
-        draw_order.append("common")
-    if req != "common" and req in groups:
-        draw_order.append(req)
-    if not draw_order:
-        raise SystemExit("[plot] neither the common mask nor the requested mask "
-                         "has runs; nothing to plot.")
-
-    # theory line uses the a_S of the REQUESTED geometry (or common if that's it)
-    if args.aS is not None:
-        a_S = float(args.aS)
-        print(f"[plot] a_S (from --aS) = {a_S:.3f}  (for mask '{req}')")
-    else:
-        a_S = _a_S_for_tag(req, args)
-        if a_S is None:
-            a_S = 0.5
-            print(f"[plot] a_S fallback = 0.5")
-        else:
-            print(f"[plot] a_S('{req}') = {a_S:.3f}")
-
-    color_for = {"common": _COMMON_COLOR}
+    # assign colours: common grey, the rest cycle through the palette
+    color_for = {}
     ci = 0
     for tag in draw_order:
         if tag == "common":
-            continue
-        color_for[tag] = _MASK_COLORS[ci % len(_MASK_COLORS)]
-        ci += 1
+            color_for[tag] = _COMMON_COLOR
+        else:
+            color_for[tag] = _MASK_COLORS[ci % len(_MASK_COLORS)]
+            ci += 1
 
     fig, axes = plt.subplots(2, 3, figsize=(15, 8.5))
     axes = axes.ravel()
-
-    # x-range spanning all drawn groups (for the theory line)
-    all_dth = np.concatenate([_series_for(groups[t], pidx)[0] for t in draw_order])
-    xline = np.array([min(all_dth.min(), 0.0), max(all_dth.max(), 0.0)])
-
-    # SIG (of the requested geometry) sets the theory-line slope; fall back to
-    # common if the requested geometry has no runs.
-    sig_src_tag = req if req in groups else "common"
-    _, _, SIG_req = _series_for(groups[sig_src_tag], pidx)
 
     for p in range(6):
         ax = axes[p]
@@ -287,24 +204,19 @@ def main(args):
             is_common = (tag == "common")
             lbl = ("common (ref)" if is_common else tag) if p == panel else None
             ax.plot(dth, Y_nl[:, p], "o-", color=color_for[tag],
-                    ms=6 if not is_common else 5, lw=1.4,
-                    alpha=1.0 if not is_common else 0.9,
-                    zorder=5 if not is_common else 3, label=lbl)
+                    ms=5 if is_common else 6, lw=1.4,
+                    alpha=0.9 if is_common else 1.0,
+                    zorder=3 if is_common else 5, label=lbl)
 
         ax.plot(0, 0, "kx", ms=8, mew=1.6, zorder=6)
-
         if p == panel:
-            smed = np.median(SIG_req[:, panel])
-            ax.plot(xline, (a_S / smed) * xline, "r--", lw=1.4,
-                    label=PLINE[args.param] + rf" ($a_S={a_S:.2f}$, '{req}')")
             ax.legend(fontsize=8.5, loc="best")
-
         ax.set_title(PLOT_LABELS[p])
         ax.set_xlabel(XLABEL[args.param])
         ax.set_ylabel(r"$(\theta^{\rm PR3}-\hat\theta^{\rm FIT})/\sigma_{\rm FIT}$")
         ax.grid(alpha=0.25)
 
-    fig.suptitle(f"{args.param} scan  (grey = common mask reference)", y=0.99)
+    fig.suptitle(f"{args.param} scan  (one colour per mask geometry)", y=0.99)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     fig.savefig(args.out, bbox_inches="tight", dpi=140)
     print(f"[plot] saved {args.out}")
@@ -318,18 +230,7 @@ if __name__ == "__main__":
     p.add_argument("--nside", type=int, default=1024)
     p.add_argument("--blend", type=float, default=3.0)
     p.add_argument("--apod", type=float, default=1.0)
-    p.add_argument("--aS", type=float, default=None,
-                   help="override a_S for the theory line (default: computed for "
-                        "the requested geometry)")
     p.add_argument("--out", type=str, default=None)
-    p.add_argument("--nomask", action="store_true",
-                   help="highlight the nomask (full-sky) runs")
-    p.add_argument("--naive_mask_h", type=float, default=None,
-                   help="half-width (deg) of a masked equatorial band; highlights that geometry")
-    p.add_argument("--naive_mask_v", type=float, default=None,
-                   help="half-width (deg) of a masked meridian band; highlights that geometry")
-    p.add_argument("--naive_l0", type=float, default=0.0,
-                   help="longitude of the vertical band/meridian")
     p.add_argument("--quadrants", action="store_true",
                    help="report the 4-quadrant weights even without a vertical mask")
     args = p.parse_args()
