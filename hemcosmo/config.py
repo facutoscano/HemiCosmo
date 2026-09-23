@@ -14,7 +14,7 @@ from dataclasses import dataclass, field, asdict, replace
 import numpy as np
 
 #%% Folders
-DATA_DIR = "/home/ftoscano/Doctorado/Data/CMB/Temperature"
+DATA_DIR = "/home/ftoscano/Doctorado/Data/CMB/PLANCK/Temperature"
 COMMON_MASK = os.path.join(DATA_DIR, "Common_mask_Temperature_2048.fits")
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
