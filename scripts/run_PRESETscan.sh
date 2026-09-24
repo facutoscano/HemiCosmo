@@ -17,9 +17,9 @@ mkdir -p "$LOGDIR"
 
 PY="python" 
 COMMON="--north fiducial --nside 1024 --delta_l 30 --lmin 32 --apod 1. \
-        --blend 3. --beam 0.0 --nsims 1000 --n_threads 60 \
+        --blend 3. --beam 0.0 --nsims 1000 --n_threads 100 \
         --phase_mode independent --minuit \
-	--naive_mask_h 6"
+	--naive_mask_h 6 --naive_mask_v 6"
 
 for S in "${SOUTHS[@]}"; do
     LOG="$LOGDIR/asym_fiducial_${S}_$(date +%Y%m%d_%H%M%S).log"
