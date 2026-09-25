@@ -13,6 +13,7 @@ Analysis Module:
 from __future__ import annotations
 import numpy as np
 from scipy.stats import chi2 as chi2_dist
+from scipy.stats import ncx2
 from .config import Cosmology, PARAM_NAMES
 
 
@@ -72,63 +73,74 @@ def validation_summary(fit_values, fit_errors, truth: Cosmology,
     return dict(pull=pull, chi2=chi2_val, ndof=ndof, pte=pte(chi2_val, ndof))
 
 
-def bias_summary(fit_values, fit_errors, north: Cosmology, south: Cosmology,
-                 fiducial: Cosmology, chi2_val, ndof,
-                 baseline_values=None, baseline_errors=None,
-                 baseline_label='Null baseline'):
+def bias_summary_regions(fit_values, fit_errors, cosmos, labels, fiducial: Cosmology,
+                         chi2_val, ndof, baseline_values=None, baseline_errors=None,
+                         baseline_label='Null baseline', wbar=None):
     """
-    Asymmetric test: report the effective full-sky fit and its bias
+    Mixed sky (K regions): report the effective full-sky fit and its bias.
+    If wbar is given, also the first-order prediction sum_k wbar_k theta_k
+    (shifted by the stitching baseline if one is supplied).
     """
-    n_vec, s_vec = north.as_vector(), south.as_vector()
-    mid = 0.5 * (n_vec + s_vec)
+    vecs = np.array([c.as_vector() for c in cosmos])
     fid = fiducial.as_vector()
     bias_fid = fit_values - fid
     bias_fid_sig = bias_fid / fit_errors
 
-    rows = [(f"North truth ({north.name})", n_vec),
-            (f"South truth ({south.name})", s_vec),
-            ("(N+S)/2", mid),
-            (f"Fiducial ({fiducial.name})", fid)]
+    rows = [(f"{lab} truth ({c.name})", v) for lab, c, v in zip(labels, cosmos, vecs)]
+    if wbar is not None:
+        wbar = np.asarray(wbar, float)
+        pred = wbar @ (vecs - fid) + (baseline_values if baseline_values is not None else fid)
+        rows.append(("1st-order prediction", pred))
+    else:
+        rows.append(("mean of regions", vecs.mean(0)))
+    rows.append((f"Fiducial ({fiducial.name})", fid))
 
     have_baseline = baseline_values is not None
     if have_baseline:
         rows.append((baseline_label, baseline_values))
 
     rows += [("Effective full-sky fit", fit_values),
-             ("Hesse error", fit_errors),
+             ("1-sky sigma", fit_errors),
              ("Bias (fit - fiducial)", bias_fid),
              ("Bias/sigma (vs fiducial)", bias_fid_sig)]
 
+    out = dict(bias_fid=bias_fid, bias_vs_fid_sig=bias_fid_sig, chi2=chi2_val, ndof=ndof)
     if have_baseline:
         bias_base = fit_values - baseline_values
         sigma_comb = np.sqrt(fit_errors**2 + baseline_errors**2)
-        bias_base_sig = np.divide(
-            bias_base, sigma_comb,
-            out=np.full_like(bias_base, np.nan), where=sigma_comb > 0)
+        bias_base_sig = np.divide(bias_base, sigma_comb,
+                                  out=np.full_like(bias_base, np.nan), where=sigma_comb > 0)
         rows += [("Bias (fit - baseline)", bias_base),
-        ("Bias/sigma (vs baseline)", bias_base_sig)]
+                 ("Bias/sigma (vs baseline)", bias_base_sig)]
+        out.update(bias=bias_base, bias_sig=bias_base_sig)
+    if wbar is not None:
+        dev = (fit_values - pred) / fit_errors
+        rows.append(("(fit - 1st order)/sigma", dev))
+        out.update(pred_first_order=pred, dev_first_order_sig=dev)
 
-    print_param_table(rows, title="ASYMMETRIC SKY: EFFECTIVE PARAMETERS & BIAS")
+    print_param_table(rows, title="MIXED SKY: EFFECTIVE PARAMETERS & BIAS")
     print(f"\n  fit chi^2 = {chi2_val:.2f}   ndof = {ndof}   "
-          f"chi^2/ndof = {chi2_val / ndof:.2f}   PTE = {pte(chi2_val, ndof):.3f}")
-
+          f"chi^2/ndof = {chi2_val / ndof:.2f}   PTE = {pte(chi2_val, ndof):.3f}"
+          f"   (chi^2 of the MEAN spectrum with 1-sky covariance = noncentrality)")
     if have_baseline:
-        imax_b = int(np.nanargmax(np.abs(bias_base_sig)))
-        imax_f = int(np.argmax(np.abs(bias_fid_sig)))
-        print(f"  largest bias vs BASELINE: {PARAM_NAMES[imax_b]} at "
-              f"{bias_base_sig[imax_b]:+.2f} sigma  <- use this one")
-        print(f"  (naive bias vs raw fiducial would have read "
-              f"{PARAM_NAMES[imax_f]} at {bias_fid_sig[imax_f]:+.2f} sigma; "
-              f"the gap is the stitching systematic, not the N/S asymmetry)")
-        return dict(bias=bias_base, bias_sig=bias_base_sig,
-                    bias_fid=bias_fid, bias_vs_fid_sig=bias_fid_sig,
-                    chi2=chi2_val, ndof=ndof)
+        imax_b = int(np.nanargmax(np.abs(out['bias_sig'])))
+        print(f"  largest bias vs BASELINE: {PARAM_NAMES[imax_b]} at {out['bias_sig'][imax_b]:+.2f} sigma")
+    else:
+        print("  WARNING: no baseline supplied -- bias conflates region differences "
+              "with the stitching systematic.")
+    return out
 
-    imax = int(np.argmax(np.abs(bias_fid_sig)))
-    print(f"  largest bias: {PARAM_NAMES[imax]} at {bias_fid_sig[imax]:+.2f} sigma")
-    print("  WARNING: no phase_mode-matched baseline was supplied -- this bias "
-          "conflates the N/S asymmetry with the hemisphere-stitching systematic.")
-    return dict(bias=bias_fid, bias_sig=bias_fid_sig, chi2=chi2_val, ndof=ndof)
+
+def bias_summary(fit_values, fit_errors, north: Cosmology, south: Cosmology,
+                 fiducial: Cosmology, chi2_val, ndof,
+                 baseline_values=None, baseline_errors=None,
+                 baseline_label='Null baseline'):
+    """
+    v1 interface (two hemispheres)
+    """
+    return bias_summary_regions(fit_values, fit_errors, [north, south], ["N", "S"],
+                                fiducial, chi2_val, ndof, baseline_values,
+                                baseline_errors, baseline_label)
 
 def linear_estimator(cov, A, nsims_cov=None):
     """
@@ -293,7 +305,14 @@ def frequentist_asymmetry(null_sims, asym_sims, cov,
 
 def chi2_goodness_of_fit(sims, cov, A, D0, nsims_cov=None):
     """
-    Distribution chi2 of each simulation vs the best-fit LCDM per sky. 
+    Minimized chi^2 of each sky vs its own best-fit LCDM, using ONE Gauss-Newton
+    step of the linear model D0 + A dtheta.
+
+    Valid only if the sims scatter around the linearization point (D0, A):
+    the neglected curvature 1/2 dtheta^T H dtheta ends up in the residual and
+    inflates chi^2. For a mixed sky whose effective parameters sit far from the
+    fiducial, linearize at the effective fit (D_eff, A_eff), otherwise the
+    'non-LCDM' signal is partly the Jacobian's curvature.
     """
     sims = np.asarray(sims, float)
     nbin = sims.shape[1]
@@ -310,3 +329,30 @@ def derive_Omega_m(fits, omnuh2=0.000645):
     fits = np.asarray(fits, float)
     H0, ob, oc = fits[:, 0], fits[:, 1], fits[:, 2]
     return (ob + oc + omnuh2) / (H0/100.0)**2
+
+def noncentral_power(lam_alt, ndof, lam_null=0.0, alpha=0.05):
+    """
+    Gaussian-bandpower prediction of the detection power of a chi^2 test:
+    P( chi2(ndof, lam_alt) > q_{1-alpha}[chi2(ndof, lam_null)] ).
+    lam = (mean - model)^T C^-1 (mean - model). Approximate (Hartlap, bandpower
+    non-Gaussianity); the empirical power from sims is the reference.
+    """
+    lam_alt = max(float(lam_alt), 1e-12)
+    thr = ncx2.ppf(1 - alpha, ndof, lam_null) if lam_null > 1e-12 \
+        else chi2_dist.ppf(1 - alpha, ndof)
+    return float(ncx2.sf(thr, ndof, lam_alt))
+
+
+def mean_consistency(sims, expected, nsims_cov=None):
+    """
+    Does the sim mean agree with an analytic expectation? chi^2 of (mean - E)
+    with covariance C_sims/N; ~ chi^2_nbin if they agree.
+    """
+    sims = np.asarray(sims, float)
+    n, nbin = sims.shape
+    C = np.cov(sims, rowvar=False, ddof=1)
+    alpha = (n - nbin - 2) / (n - 1)
+    d = sims.mean(0) - np.asarray(expected, float)
+    chi2v = float(n * alpha * d @ np.linalg.solve(C, d))
+    z = d / np.sqrt(np.diag(C) / n)
+    return dict(chi2=chi2v, ndof=nbin, pte=pte(chi2v, nbin), z=z)

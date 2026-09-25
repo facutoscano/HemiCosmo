@@ -2,14 +2,15 @@
 """
 Random sky mixed realizations.
 
-Show 6 realizations of the sky  W_N*m_N + (1-W_N)*m_S  for a given
-(north, south) pair
+Show 6 realizations of the composite sky  sum_k W_k m_k  for a layout
+(hemi: --north/--south; quad: --layout quad --regions NE NW SE SW)
 Applies the mask actually used
 Mollview's them into a 2x3 grid
 
 Run with:
     python scripts/plot_maps.py --north fiducial --south 74H0 --nside 1024 
     python scripts/plot_maps.py --north fiducial --south 62H0 --nside 1024 --nomask
+    python scripts/plot_maps.py --layout quad --regions fiducial 74H0 092ns fiducial --naive_mask_h 6 --naive_mask_v 6 --nside 1024
 """
 import os
 import sys
@@ -21,12 +22,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from hemcosmo.config import RunConfig, FIDUCIAL, get_cosmo  
+from hemcosmo.config import RunConfig, FIDUCIAL, LAYOUTS, get_cosmo
 from hemcosmo.theory import cosmology_to_cls  
 from hemcosmo.masks import (load_common_mask, galactic_hemisphere_weight,
                             subtract_monopole, build_mask, hemisphere_windows,
-                            quadrant_windows, 
+                            quadrant_windows, layout_windows, layout_weights,
                             region_weights)
+from hemcosmo.sims import composite_map, _make_seeds, _unique_cls
 
 
 def build_config(args) -> RunConfig:
@@ -35,7 +37,7 @@ def build_config(args) -> RunConfig:
                      apod_deg=args.apod, blend_width_deg=args.blend,
                      beam_fwhm_deg=args.beam, phase_mode=args.phase_mode, nomask=args.nomask, seed=args.seed,
                      naive_mask_h=args.naive_mask_h, naive_mask_v=args.naive_mask_v,
-                     naive_l0_deg=args.naive_l0)
+                     naive_l0_deg=args.naive_l0, layout=args.layout)
 
 def mask_tag(cfg: RunConfig) -> str:
     if cfg.naive_mask_h is not None or cfg.naive_mask_v is not None:
@@ -76,30 +78,34 @@ def one_composite(cl_n, cl_s, cfg, Wn, Ws, mask, seed_n, seed_s):
 
 def main(args):
     cfg = build_config(args)
-    north = get_cosmo(args.north)
-    south = get_cosmo(args.south)
-    tag = f"{north.name}_{south.name}"
+    labels = list(LAYOUTS[cfg.layout])
+    if args.regions:
+        specs = args.regions
+    elif cfg.layout == "hemi":
+        specs = [args.north, args.south]
+    else:
+        raise SystemExit(f"--layout {cfg.layout} needs --regions {labels}")
+    cosmos = [get_cosmo(s) for s in specs]
+    tag = (f"{cosmos[0].name}_{cosmos[1].name}" if cfg.layout == "hemi"
+           else f"{cfg.layout}_" + "_".join(c.name for c in cosmos))
     outdir = cfg.results_for(tag)
 
     mask = build_mask(cfg)
     mtag = mask_tag(cfg)
+    layout_weights(cfg, mask)
+    if cfg.layout == "hemi":
+        report_weights(cfg, mask, args.quadrants or (cfg.naive_mask_v is not None))
 
-    use_quadrants = args.quadrants or (cfg.naive_mask_v is not None)
-    report_weights(cfg, mask, use_quadrants)
-
-    Wn = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=True)
-    Ws = 1.0 - Wn
-    cl_n = cosmology_to_cls(north, cfg.lmax_synth, cfg.lens_potential_accuracy)
-    cl_s = cosmology_to_cls(south, cfg.lmax_synth, cfg.lens_potential_accuracy)
-
-    shared = (cfg.phase_mode == 'shared')
-    rng = np.random.default_rng(cfg.seed if cfg.seed is not None else 0)
+    windows = list(layout_windows(cfg).values())
+    ucls, cl_ids = _unique_cls(cosmos, cfg)
+    seeds = _make_seeds(cfg, 6, offset=0, K=len(labels))   # = the first 6 sims of the run
 
     maps = []
-    for i in range(6):
-        sn = int(rng.integers(0, 2**31 - 1))
-        ss = sn if shared else int(rng.integers(0, 2**31 - 1))
-        maps.append(one_composite(cl_n, cl_s, cfg, Wn, Ws, mask, sn, ss))
+    for i, sd in enumerate(seeds):
+        comp = composite_map(cfg, windows, ucls, cl_ids, sd)
+        if cfg.beam_fwhm_deg > 0:
+            comp = hp.smoothing(comp, fwhm=np.radians(cfg.beam_fwhm_deg))
+        maps.append(subtract_monopole(comp, mask))
         print(f"[maps]   realization {i+1}/6")
 
     support = mask > 0.5
@@ -113,10 +119,10 @@ def main(args):
                     cmap="RdBu_r", min=-vmax, max=vmax, unit=r"$\mu K$",
                     cbar=True, notext=True)
         hp.graticule(dpar=30, dmer=30, alpha=0.25)
-    fig.suptitle(f" N={north.name} / S={south.name}  "
-                 f"(nside={cfg.nside}, blend={cfg.blend_width_deg:g}deg, "
-                 f" {mtag})", y=1.02, fontsize=13)
-    out = os.path.join(outdir, f"Maps_{tag}_{mtag}_ns{cfg.nside}.png")
+    fig.suptitle(" / ".join(f"{l}={c.name}" for l, c in zip(labels, cosmos)) +
+                 f"  (nside={cfg.nside}, blend={cfg.blend_width_deg:g}deg, {mtag}, "
+                 f"{cfg.phase_mode})", y=1.02, fontsize=13)
+    out = os.path.join(outdir, f"Maps_{tag}_{mtag}_ns{cfg.nside}_{cfg.phase_mode}.png")
     fig.savefig(out, bbox_inches="tight", dpi=120)
     plt.close(fig)
     print(f"[maps] saved {out}")
@@ -124,6 +130,8 @@ def main(args):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="2x3 gallery of composite-sky realizations.")
+    p.add_argument("--layout", choices=list(LAYOUTS), default="hemi")
+    p.add_argument("--regions", nargs="+", default=None)
     p.add_argument("--north", type=str, default="fiducial")
     p.add_argument("--south", type=str, default="74H0")
     p.add_argument("--nside", type=int, default=512)
@@ -143,5 +151,5 @@ if __name__ == "__main__":
     p.add_argument("--naive_l0", type=float, default=0.0, help="longitude of the vertical band/meridian")
     p.add_argument("--quadrants", action="store_true",
                    help="report the 4-quadrant weights even without a vertical mask")
-    p.add_argument("--seed", type=int, default=None, help="random seed (None -> 0 for reproducibility here)")
+    p.add_argument("--seed", type=int, default=1234, help="same default as RunConfig -> shows the run's first 6 sims")
     main(p.parse_args())

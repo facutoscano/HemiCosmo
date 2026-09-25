@@ -152,7 +152,8 @@ def meridian_weight(nside, blend_width_deg=5.0, l0_deg=0.0, east=True) -> np.nda
 
 def region_weights(mask, windows) -> np.ndarray:
     """
-    a_k = <M^2 W_k^2>/<M^2>.
+    a_k = <M^2 W_k^2>/<M^2>  (independent phases: power of region k in the pseudo-Cl).
+    sum_k a_k < 1 in the blend zones -> amplitude deficit of stitched skies.
     'windows' is a list of maps W_k (same nside as 'mask')
     """
     m2 = np.asarray(mask, float) ** 2
@@ -183,3 +184,55 @@ def south_weight_from_cfg(cfg: RunConfig) -> float:
     mask = build_mask(cfg, verbose=False)
     Ws = galactic_hemisphere_weight(cfg.nside, cfg.blend_width_deg, north=False)
     return region_weights(mask, [Ws])[0]
+
+def region_weights_shared(mask, windows) -> np.ndarray:
+    """
+    a_k = <M^2 W_k>/<M^2>  (shared phases: first-order response of the pseudo-Cl
+    to region k's spectrum). Linear in W_k, so sum_k a_k = 1 exactly: no deficit.
+    """
+    m2 = np.asarray(mask, float) ** 2
+    denom = float(m2.sum())
+    return np.array([float((m2 * np.asarray(W, float)).sum() / denom) for W in windows])
+
+
+def layout_windows(cfg: RunConfig) -> dict:
+    """
+    Partition-of-unity windows for cfg.layout, as an ordered dict {label: W}.
+    Order == config.LAYOUTS[cfg.layout] (the order used by the CLI and the seeds).
+    """
+    if cfg.layout == "hemi":
+        w = hemisphere_windows(cfg)
+    elif cfg.layout == "quad":
+        w = quadrant_windows(cfg, cfg.naive_l0_deg)
+    else:
+        raise ValueError(f"unknown layout {cfg.layout}")
+    labels = cfg.labels
+    if tuple(w.keys()) != tuple(labels):
+        w = {k: w[k] for k in labels}
+    return w
+
+
+def layout_weights(cfg: RunConfig, mask: np.ndarray, verbose: bool = True) -> dict:
+    """
+    Region weights for both phase modes and the normalized first-order weights
+    wbar_k = a_k / sum_j a_j (the prediction theta_eff = sum_k wbar_k theta_k).
+    """
+    w = layout_windows(cfg)
+    labels = list(w)
+    Ws = list(w.values())
+    tot = np.sum(Ws, axis=0)
+    err = float(np.max(np.abs(tot - 1.0)))
+    if err > 1e-10:
+        raise RuntimeError(f"windows are not a partition of unity (max|sum-1|={err:.2e})")
+    a_ind = region_weights(mask, Ws)
+    a_sh = region_weights_shared(mask, Ws)
+    out = dict(labels=labels, a_indep=a_ind, a_shared=a_sh,
+               wbar_indep=a_ind / a_ind.sum(), wbar_shared=a_sh / a_sh.sum(),
+               deficit_indep=1.0 - a_ind.sum())
+    if verbose:
+        print(f"[weights] layout={cfg.layout}  blend={cfg.blend_width_deg:g} deg")
+        for i, lab in enumerate(labels):
+            print(f"[weights]   {lab:>3}: a_indep={a_ind[i]:.4f}  a_shared={a_sh[i]:.4f}  "
+                  f"wbar_indep={out['wbar_indep'][i]:.4f}  wbar_shared={out['wbar_shared'][i]:.4f}")
+        print(f"[weights]   independent-phase amplitude deficit 1-sum(a) = {out['deficit_indep']:.4f}")
+    return out

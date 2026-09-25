@@ -145,7 +145,8 @@ def linear_fit(data, cov, theta0, A, tau, wsp, binning, cfg: RunConfig,
         grad = A.T @ Cinv @ (data - D)
         grad_ok = np.max(np.abs(grad) * errs) < eps_g
         n_iter = it+1
-        print(f"[response] iter {it}: chi2={chi2:.2f}  |grad*errs|={np.max(np.abs(grad)*errs):.3e}  |dtheta|={np.max(np.abs(delta_lm)):.2e}  mu={mu:.2e}")
+        if verbose:
+            print(f"[response] iter {it}: chi2={chi2:.2f}  |grad*errs|={np.max(np.abs(grad)*errs):.3e}  |dtheta|={np.max(np.abs(delta_lm)):.2e}  mu={mu:.2e}")
         chi2_converged = abs(chi2_old - chi2) < eps_chi2 * max(1.0, abs(chi2))
 
         min_iter = 4

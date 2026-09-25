@@ -293,3 +293,125 @@ def plot_correlation_matrices(cov_list, titles, outpath, ells=None, title=""):
     fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
     print(f"[plots] saved {outpath}")
+
+#%% K-region versions (hemi = 2 regions is a special case)
+REGION_COLORS = ["#1d6fb8", "#c1121f", "#2a9d3a", "#e08214", "#6a3d9a", "#00838f"]
+
+
+def plot_global_vs_regions(fit_values, fit_errors, region_vecs, region_labels, outpath,
+                           fid_vec=None, baseline_vec=None, pred_vec=None, title=""):
+    """
+    One panel per parameter: global fit vs each region's input value
+    (and the first-order prediction if given)
+    """
+    n = len(PARAM_LABELS)
+    fig, axes = plt.subplots(1, n, figsize=(2.5 * n, 4.2))
+    for i, ax in enumerate(axes):
+        vals = [np.asarray(v)[i] for v in region_vecs]
+        for c, (lab, v) in enumerate(zip(region_labels, vals)):
+            ax.axhline(v, color=REGION_COLORS[c % len(REGION_COLORS)], lw=2,
+                       ls=["-", "--", "-.", ":"][c % 4], label=lab)
+        if fid_vec is not None:
+            ax.axhline(fid_vec[i], color="k", ls="--", lw=1, label="fiducial")
+        if baseline_vec is not None:
+            ax.axhline(baseline_vec[i], color="k", ls=":", lw=1, label="baseline")
+        if pred_vec is not None:
+            ax.plot([0.35], [pred_vec[i]], "D", color="0.4", ms=6, label="1st-order pred.")
+        ax.errorbar([0], [fit_values[i]], yerr=[fit_errors[i]], fmt="ks", ms=8,
+                    capsize=3, lw=2, label="Global fit", zorder=5)
+        lo = min(vals + [fit_values[i] - fit_errors[i]])
+        hi = max(vals + [fit_values[i] + fit_errors[i]])
+        pad = 0.15 * (hi - lo + 1e-12)
+        ax.set_ylim(lo - pad, hi + pad)
+        ax.set_xlim(-0.5, 0.8)
+        ax.set_title(PARAM_LABELS[i])
+        ax.set_xticks([])
+    axes[0].legend(fontsize=7, loc="best")
+    if title:
+        fig.suptitle(title)
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[plots] saved {outpath}")
+
+
+def plot_region_fit_distribution(fits_null, fits_asym, region_truths, region_labels,
+                                 truths_fid, labels, outpath, baseline_vec=None, title=""):
+    """
+    Per-sim effective parameters (null vs mixed) with every region's truth
+    """
+    fits_null = np.asarray(fits_null, float); fits_asym = np.asarray(fits_asym, float)
+    ncol = fits_null.shape[1]
+    fig, axes = plt.subplots(1, ncol, figsize=(2.7 * ncol, 3.9))
+    for i, ax in enumerate(axes):
+        cn, ca = fits_null[:, i], fits_asym[:, i]
+        lo = min(cn.min(), ca.min()); hi = max(cn.max(), ca.max())
+        bins = np.linspace(lo, hi, 32)
+        ax.hist(cn, bins=bins, density=True, color="0.6", alpha=0.65, label="Baseline")
+        ax.hist(ca, bins=bins, density=True, color="#c1121f", alpha=0.45, label="Mixed")
+        for c, (lab, tr) in enumerate(zip(region_labels, region_truths)):
+            if np.isfinite(tr[i]):
+                ax.axvline(tr[i], color=REGION_COLORS[c % len(REGION_COLORS)], lw=1.6,
+                           ls=["-", "--", "-.", ":"][c % 4], label=lab)
+        if np.isfinite(truths_fid[i]):
+            ax.axvline(truths_fid[i], color="k", ls="--", lw=1, label="fiducial")
+        if baseline_vec is not None and np.isfinite(baseline_vec[i]):
+            ax.axvline(baseline_vec[i], color="k", ls=":", lw=1.2, label="baseline")
+        ax.set_title(labels[i], fontsize=10); ax.set_yticks([])
+    axes[0].legend(fontsize=6.5, loc="best")
+    if title:
+        fig.suptitle(title)
+    fig.tight_layout(rect=[0, 0, 1, 0.94]); fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig); print(f"[plots] saved {outpath}")
+
+
+def plot_bandpowers_regions(ells, data_dl, model_dl, sigma, bp_regions, region_labels,
+                            outpath, title=""):
+    """
+    Mean mixed bandpowers vs effective LCDM, with each region's single-sky profile
+    """
+    fig, ax = plt.subplots(2, 1, figsize=(9, 7), sharex=True,
+                           gridspec_kw={"height_ratios": [3, 1], "hspace": 0.05})
+    for c, (lab, bp) in enumerate(zip(region_labels, bp_regions)):
+        col = REGION_COLORS[c % len(REGION_COLORS)]
+        ax[0].plot(ells, bp, color=col, lw=1.2, alpha=0.9, label=lab)
+        ax[1].plot(ells, (data_dl - bp) / sigma, color=col, lw=1,
+                   label=rf"$(\bar D-{lab})/\sigma$")
+    ax[0].errorbar(ells, data_dl, yerr=sigma, fmt="o", ms=4, capsize=2, color="k",
+                   label="Mixed sims")
+    ax[0].plot(ells, model_dl, "g-", lw=1.5, label="Effective LCDM fit")
+    ax[0].set_ylabel(r"$D_\ell\ [\mu K^2]$"); ax[0].set_xscale("log")
+    ax[0].legend(fontsize=8); ax[0].grid(alpha=0.3); ax[0].set_title(title)
+    ax[1].axhline(0, color="k", ls="--", lw=0.8)
+    ax[1].plot(ells, (data_dl - model_dl) / sigma, "go-", ms=3,
+               label=r"$(\bar D-\mathrm{fit})/\sigma$")
+    ax[1].set_ylabel(r"$\Delta/\sigma$"); ax[1].set_xlabel(r"$\ell$")
+    ax[1].set_ylim(-5, 5)
+    ax[1].legend(fontsize=7, ncol=3); ax[1].grid(alpha=0.3)
+    fig.savefig(outpath, bbox_inches="tight"); plt.close(fig)
+    print(f"[plots] saved {outpath}")
+
+
+def plot_expected_check(ells, mean_sims, expected, sigma, nsims, a_ell, region_labels,
+                        a_scalar, outpath, title=""):
+    """
+    Top: (sim mean - analytic expectation) in units of the error on the mean.
+    Bottom: effective weights a_k(l) of each region vs their scalar value.
+    """
+    fig, ax = plt.subplots(2, 1, figsize=(9, 7), sharex=True,
+                           gridspec_kw={"height_ratios": [1, 1.3], "hspace": 0.08})
+    z = (mean_sims - expected) / (sigma / np.sqrt(nsims))
+    ax[0].axhline(0, color="k", lw=0.8)
+    ax[0].fill_between(ells, -2, 2, color="0.85")
+    ax[0].plot(ells, z, "ko-", ms=3)
+    ax[0].set_ylabel(r"$(\bar D^{\rm sims}-D^{\rm exp})/(\sigma/\sqrt{N})$")
+    ax[0].set_title(title); ax[0].grid(alpha=0.3)
+    for c, lab in enumerate(region_labels):
+        col = REGION_COLORS[c % len(REGION_COLORS)]
+        ax[1].plot(ells, a_ell[c], color=col, lw=1.4, label=rf"$a_{{{lab}}}(\ell)$")
+        ax[1].axhline(a_scalar[c], color=col, ls=":", lw=1)
+    ax[1].plot(ells, np.sum(a_ell, axis=0), color="k", lw=1, label=r"$\sum_k a_k(\ell)$")
+    ax[1].set_xscale("log"); ax[1].set_xlabel(r"$\ell$"); ax[1].set_ylabel("weight")
+    ax[1].legend(fontsize=8, ncol=3); ax[1].grid(alpha=0.3)
+    fig.savefig(outpath, bbox_inches="tight"); plt.close(fig)
+    print(f"[plots] saved {outpath}")

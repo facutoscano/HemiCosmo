@@ -61,15 +61,18 @@ def aug6_vec(v5):
     return aug6_arr(np.asarray(v5, float)[None, :])[0]
 
 
-def common_south_weight(nside, blend, apod):
+def common_south_weight(nside, blend, apod, param="ns"):
     """
-    a_S = <M^2 W_S^2>/<M^2> for the common mask geometry (build_mask).
+    First-order slope for the common mask with independent phases:
+      shape parameters: a_S/(a_N+a_S)  (the baseline absorbs the deficit a_N+a_S<1 in As)
+      amplitude As_tau: a_S            (amplitudes add)
     Returns None if the mask can't be built here.
     """
     try:
-        from hemcosmo.masks import south_weight_from_cfg
+        from hemcosmo.masks import build_mask, layout_weights
         cfg = RunConfig(nside=nside, apod_deg=apod, blend_width_deg=blend)
-        return south_weight_from_cfg(cfg)
+        w = layout_weights(cfg, build_mask(cfg, verbose=False), verbose=False)
+        return float(w["a_indep"][1] if param == "As_tau" else w["wbar_indep"][1])
     except Exception as e:
         print(f"[plot] common a_S unavailable ({e})")
         return None
@@ -82,6 +85,7 @@ def mask_tag_from_name(fname):
     Returns (mask_tag, phase_mode_or_None).
     """
     base = fname[:-4] if fname.endswith(".npz") else fname
+    base = re.sub(r"_cov(isotropic|stitched)$", "", base)
     phase = None
     for pm in _PHASE:
         if base.endswith("_" + pm):
@@ -117,7 +121,7 @@ def bound_flags(vec5, frac=0.02):
     return hits
 
 
-def load_scan(results_dir, pidx):
+def load_scan(results_dir, pidx, cov_mode="stitched"):
     """
     All runs where North==fiducial and South differs ONLY in fit-index `pidx`,
     tagged by mask geometry (parsed from the filename). No mask filtering here --
@@ -143,6 +147,9 @@ def load_scan(results_dir, pidx):
         if not np.allclose(south[others], fid[others], atol=1e-8):
             continue
         if np.isclose(south[pidx], fid[pidx], atol=1e-8):
+            continue
+        cm = str(d["cov_mode"]) if "cov_mode" in d.files else "stitched"   # v1 files: stitched
+        if cm != cov_mode:
             continue
         mtag, phase = mask_tag_from_name(os.path.basename(f))
         runs.append(dict(
@@ -182,7 +189,7 @@ def main(args):
     pidx = PARAM_TO_IDX[args.param]
     panel = PANEL_OF[pidx]
 
-    runs = load_scan(args.results_dir, pidx)
+    runs = load_scan(args.results_dir, pidx, args.cov_mode)
     if not runs:
         raise SystemExit(f"No {args.param}-scan runs under {args.results_dir}.")
 
@@ -213,7 +220,7 @@ def main(args):
     # theory line for the COMMON mask (black dotted, reference). Needs a_S(common)
     # and the common-mask sigma to set the slope; drawn only on the --param panel.
     a_S_common = float(args.aS) if args.aS is not None else \
-        common_south_weight(args.nside, args.blend, args.apod)
+        common_south_weight(args.nside, args.blend, args.apod, args.param)
     if "common" in groups:
         _, _, SIG_common = _series_for(groups["common"], pidx)
         smed_common = np.median(SIG_common[:, panel])
@@ -276,6 +283,7 @@ if __name__ == "__main__":
                    help="override a_S(common) for the reference theory line "
                         "(default: computed for the common mask)")
     p.add_argument("--out", type=str, default=None)
+    p.add_argument("--cov_mode", choices=["stitched", "isotropic"], default="stitched")
     p.add_argument("--quadrants", action="store_true",
                    help="report the 4-quadrant weights even without a vertical mask")
     args = p.parse_args()

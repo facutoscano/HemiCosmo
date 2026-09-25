@@ -21,18 +21,19 @@ config      : Cosmology / RunConfig dataclasses, fiducial + preset cosmologies.
 theory      : CAMB wrapper (C_l / D_l), As <-> As*exp(-2tau) conversion.
 masks       : common-mask loading + smooth Galactic-hemisphere partition window.
 spectra     : NaMaster binning, workspace, map & theory bandpowers (D_l).
-sims        : cached generation of composite-sky bandpower simulations.
+sims        : cached, metadata-verified K-region composite sims + isotropic sims.
+expected    : analytic ensemble-mean bandpowers, response matrices, region solver.
 likelihood  : chi^2 factory + iminuit fit (Hartlap-corrected inverse covariance).
 analysis    : bias summaries, goodness-of-fit, formatted tables.
 plots       : optional diagnostic / corner / bias plots (corner is optional).
 """
 
 from .config import (
-    Cosmology, RunConfig, FIDUCIAL, PRESETS,
-    PARAM_NAMES, PARAM_LABELS, cosmo_from_fit,
+    Cosmology, RunConfig, FIDUCIAL, PRESETS, LAYOUTS,
+    PARAM_NAMES, PARAM_LABELS, cosmo_from_fit, get_cosmo,
 )
 
 __all__ = [
     "Cosmology", "RunConfig", "FIDUCIAL", "PRESETS",
-    "PARAM_NAMES", "PARAM_LABELS", "cosmo_from_fit",
+    "PARAM_NAMES", "PARAM_LABELS", "cosmo_from_fit", "LAYOUTS", "get_cosmo",
 ]
