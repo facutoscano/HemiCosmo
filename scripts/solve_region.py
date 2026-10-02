@@ -33,6 +33,7 @@ from hemcosmo.masks import transfer_function, build_mask
 from hemcosmo.spectra import make_binning, get_workspace, analysis_bin_sel
 from hemcosmo.sims import get_or_generate_region_sims, covariance
 from hemcosmo.expected import ExpectedModel
+from hemcosmo.logutil import tee_output
 
 
 def main(args):
@@ -48,6 +49,15 @@ def main(args):
     if len(args.regions) != len(labels):
         raise SystemExit(f"--regions needs {len(labels)} specs in order {labels}")
     cosmos = [FIDUCIAL if i == b else get_cosmo(s) for i, s in enumerate(args.regions)]
+    if cfg.layout == "quad" and cfg.naive_mask_v is None:
+        raise SystemExit("[solve] quad layout requires --naive_mask_v (the E/W seams must be masked)")
+    stem = os.path.join(cfg.results_for("solve_region"),
+                        f"solve_{cfg.layout}_{args.solve}_{args.target}_{cfg.key()}")
+    with tee_output(stem + ".log"):
+        run(args, cfg, labels, b, cosmos, stem)
+
+
+def run(args, cfg, labels, b, cosmos, stem):
 
     mask = build_mask(cfg)
     binning = make_binning(cfg)
@@ -77,8 +87,7 @@ def main(args):
     print("   " + "  ".join(f"{n}={(v - f) / s:+.2f}" for n, v, f, s in
                             zip(PARAM_NAMES, theta_b, theta0, sig)))
     print(f"[solve] spec for run_asymmetry.py:\n   {sol.to_spec()}")
-    out = os.path.join(cfg.results_for("solve_region"),
-                       f"solve_{cfg.layout}_{args.solve}_{args.target}_{cfg.key()}.npz")
+    out = stem + ".npz"
     np.savez_compressed(out, theta_solved=theta_b, target=target, R=resp["R"],
                         eta=resp["eta"], theta_base=resp["theta_base"],
                         history_region=np.array([h[0] for h in hist]),

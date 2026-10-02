@@ -48,6 +48,7 @@ from hemcosmo.analysis import (bias_summary_regions, hypothesis_test, frequentis
                                chi2_goodness_of_fit, derive_Omega_m, noncentral_power,
                                mean_consistency)
 from hemcosmo import plots
+from hemcosmo.logutil import tee_output
 
 
 #%% Helpers
@@ -101,32 +102,58 @@ def jac(theta, cfg, wsp, binning, beam, sel):
     return D[sel], A[sel]
 
 
+def require_masks(cfg):
+    """
+    Fatal geometry checks (run before the log is opened)
+    """
+    if cfg.layout == "quad" and cfg.naive_mask_v is None:
+        raise SystemExit("[mixed] quad layout requires --naive_mask_v (the E/W seams must be masked)")
+
+
 def sanity_warnings(cfg, cosmos):
     distinct = len({c.tag() for c in cosmos}) > 1
     if cfg.phase_mode == "shared" and distinct:
         print("[mixed] NOTE: phase_mode='shared' with different cosmologies = one primordial "
               "realization with l-by-l perfectly correlated regions. Exact for As/ns-type "
               "changes, only approximate for geometric ones (H0, omega_c shift the k->l projection).")
-    if cfg.layout == "quad" and cfg.naive_mask_v is None:
-        print("[mixed] WARNING: quad layout without --naive_mask_v -> the E/W seams are in the "
-              "observed sky")
     if cfg.naive_mask_h is None and (cfg.naive_mask_v is not None or cfg.nomask):
         print("[mixed] WARNING: no horizontal band -> the N/S seam at b=0 is in the observed sky")
 
 
 #%% Pipeline
+def output_paths(args, cfg, cosmos):
+    """
+    Results folder and the common stem of every output (npz, log, figures)
+    """
+    tag = run_tag(cfg, cosmos)
+    outdir = cfg.results_for(tag)
+    suffix = "" if args.cov_mode == "stitched" else f"_cov{args.cov_mode}"
+    stem = os.path.join(outdir, f"asym_{tag}_{cfg.key()}{suffix}")
+    return tag, outdir, stem
+
+
 def main(args):
     cfg = build_config(args)
     labels, cosmos = resolve_regions(args, cfg)
+    require_masks(cfg)                            # fail fast, before opening the log
+    tag, outdir, stem = output_paths(args, cfg, cosmos)
+    with tee_output(stem + ".log"):
+        run(args, cfg, labels, cosmos, tag, outdir, stem)
+
+
+def run(args, cfg, labels, cosmos, tag, outdir, stem):
     K = len(cosmos)
     fid_list = [FIDUCIAL] * K
-    tag = run_tag(cfg, cosmos)
-    outdir = cfg.results_for(tag)
     ext = "pdf"
     print(f"[mixed] layout={cfg.layout}  " +
           "  ".join(f"{l}={c.name}" for l, c in zip(labels, cosmos)) +
           f"  cov_mode={args.cov_mode}  config={cfg.key()}")
     sanity_warnings(cfg, cosmos)
+    suffix = "" if args.cov_mode == "stitched" else f"_cov{args.cov_mode}"
+
+    def fig(name):
+        """figure path: same stem as the npz/log, so stitched/isotropic never overwrite"""
+        return os.path.join(outdir, f"asym_{name}_{tag}_{cfg.key()}{suffix}.{ext}")
 
     mask = build_mask(cfg)
     binning = make_binning(cfg)
@@ -242,7 +269,7 @@ def main(args):
         plots.plot_correlation_matrices(
             [covs["isotropic"], covs["stitched"], covariance(asym_sims)],
             ["isotropic", "stitched null", "mixed"],
-            os.path.join(outdir, f"asym_corr_{tag}_{cfg.key()}.{ext}"),
+            fig("corr"),
             ells=ells, title=f"Correlation matrices ({tag})")
 
     ### Effective-cosmology sims (optional, 1000 extra sims): covariance + Q2 control
@@ -283,7 +310,7 @@ def main(args):
         a_scalar = W["a_shared"] if cfg.phase_mode == "shared" else W["a_indep"]
         plots.plot_expected_check(ells, mean_asym, E_asym, np.sqrt(np.diag(covariance(asym_sims))),
                                   cfg.nsims, a_ell, labels, a_scalar,
-                                  os.path.join(outdir, f"asym_expected_{tag}_{cfg.key()}.{ext}"),
+                                  fig("expected"),
                                   title=f"analytic mean vs sims ({tag})")
         exp_out = dict(E_null=E_null, E_asym=E_asym, fit_E=fit_E["values"], R=resp["R"],
                        eta=resp["eta"], theta_base_exp=resp["theta_base"], pred_first=pred,
@@ -316,8 +343,7 @@ def main(args):
         save.update(north=cosmos[0].as_vector(), south=cosmos[1].as_vector())
     for k, v in cov_cmp.items():
         save[f"fit_cov_{k}"] = v
-    suffix = "" if args.cov_mode == "stitched" else f"_cov{args.cov_mode}"
-    out = os.path.join(outdir, f"asym_{tag}_{cfg.key()}{suffix}.npz")
+    out = stem + ".npz"
     np.savez_compressed(out, **save)
     print(f"\n[mixed] saved {out}")
 
@@ -343,11 +369,11 @@ def main(args):
                                          wsp, binning, beam=beam)[sel] for c in cosmos]
     reg_lab = [f"{l} ({c.name})" for l, c in zip(labels, cosmos)]
     plots.plot_bandpowers_regions(ells, mean_asym, model_best, sigma, bp_regions, reg_lab,
-                                  os.path.join(outdir, f"asym_bandpowers_{tag}_{cfg.key()}.{ext}"),
+                                  fig("bandpowers"),
                                   title=tag)
     plots.plot_global_vs_regions(fit["values"], freq["sigma_asym"],
                                  [c.as_vector() for c in cosmos], reg_lab,
-                                 os.path.join(outdir, f"asym_global_vs_regions_{tag}_{cfg.key()}.{ext}"),
+                                 fig("global_vs_regions"),
                                  fid_vec=theta0, baseline_vec=null_fit["values"],
                                  pred_vec=bsum.get("pred_first_order"), title=tag)
     cols_null = np.column_stack([freq["fits_null"], s8_null, Om_null])
@@ -356,10 +382,10 @@ def main(args):
     fid7 = np.append(theta0, [s8_0, Om_fid])
     base7 = np.append(null_fit["values"], [s8_null.mean(), Om_null.mean()])
     plots.plot_region_fit_distribution(cols_null, cols_asym, reg7, reg_lab, fid7, labels7,
-                                       os.path.join(outdir, f"asym_fitdist_{tag}_{cfg.key()}.{ext}"),
+                                       fig("fitdist"),
                                        baseline_vec=base7, title=tag)
     plots.plot_detectability_dual(chi2_null, chi2_asym, chi2_gof_null, chi2_gof_asym, nbin,
-                                  os.path.join(outdir, f"asym_chi2_{tag}_{cfg.key()}.{ext}"),
+                                  fig("chi2"),
                                   title=tag, label_asym=tag)
 
 

@@ -48,3 +48,29 @@
     # look at the skies
     python scripts/plot_maps.py --layout quad --regions fiducial 74H0 092ns 1262omc \
         --naive_mask_h 6 --naive_mask_v 6 --nside 1024 --phase_mode independent
+
+# Iteration 2 — logs + H0 scan
+
+## Logs
+- New `hemcosmo/logutil.py` (`tee_output`): stdout+stderr duplicated into a `.log`
+  at the file-descriptor level, so CAMB/NaMaster/healpy C output, worker processes,
+  warnings and tracebacks are all captured. Header with date, host, cwd and the
+  exact command line; footer with run time and finished/FAILED. An exception inside
+  the run is written to the log and exits with rc=1.
+- `run_asymmetry.py` -> `results/<tag>/asym_<tag>_<key>[_cov<mode>].log` (same stem as the npz).
+- `run_validation.py` -> `results/validation/validation_<key>.log`, or
+  `phase_mode_comparison_<geom_key>.log` with `--compare_phase_modes` (both branches in one log).
+- `solve_region.py` -> `results/solve_region/solve_<...>.log`.
+
+## Fixes
+- Figures of `run_asymmetry.py` now carry the `_cov<mode>` suffix: an isotropic run
+  no longer overwrites the stitched figures.
+- `--layout quad` without `--naive_mask_v` is now an error (run_asymmetry, solve_region, plot_maps).
+
+## Presets
+- `68.5H0` (H0=68.5, explicit name). `68H0` kept with its v1 name so v1 caches can still be adopted.
+
+## Scan
+- `scripts/run_PRESETscan.sh`: N=fiducial, S = 62H0 65H0 68.5H0 71H0 74H0, hemi,
+  H6+V6 masks, independent phases, Minuit, `--expected`; pass 1 stitched covariance
+  (+ `--compare_cov`), pass 2 isotropic covariance (only refits, sims cached).

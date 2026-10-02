@@ -86,6 +86,8 @@ def main(args):
     else:
         raise SystemExit(f"--layout {cfg.layout} needs --regions {labels}")
     cosmos = [get_cosmo(s) for s in specs]
+    if cfg.layout == "quad" and cfg.naive_mask_v is None:
+        raise SystemExit("[maps] quad layout requires --naive_mask_v (the E/W seams must be masked)")
     tag = (f"{cosmos[0].name}_{cosmos[1].name}" if cfg.layout == "hemi"
            else f"{cfg.layout}_" + "_".join(c.name for c in cosmos))
     outdir = cfg.results_for(tag)

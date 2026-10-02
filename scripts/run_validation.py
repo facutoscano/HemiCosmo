@@ -33,6 +33,7 @@ from hemcosmo.likelihood import fit_bandpowers, fit_to_dict, hartlap_factor
 from hemcosmo.response import compute_jacobian, linear_fit
 from hemcosmo.analysis import validation_summary, frequentist_validation
 from hemcosmo import plots
+from hemcosmo.logutil import tee_output
 
 
 def build_config(args, phase_mode=None) -> RunConfig:
@@ -183,14 +184,28 @@ def compare_phase_modes(args, mask, binning, wsp, sel, beam):
         os.path.join(cfg_shared.results_for('validation'), f"phase_mode_comparison_{cfg_shared.geom_key()}.png"),
         title="Null test vs hemisphere-stitching systematic")
 
-def main(args):
-    cfg_geom = build_config(args, phase_mode='shared')
-    mask, binning, wsp, sel, beam = compute_geometry(cfg_geom)
-
+def log_path(args):
+    """
+    Same stem as the npz the run writes:
+      --compare_phase_modes -> validation/phase_mode_comparison_<geom_key>.log (both branches)
+      otherwise             -> validation/validation_<key>.log
+    """
+    cfg = build_config(args, phase_mode=None if not args.compare_phase_modes else "shared")
+    outdir = cfg.results_for("validation")
     if args.compare_phase_modes:
-        compare_phase_modes(args, mask, binning, wsp, sel, beam)
-    else:
-        run_phase_mode(args.phase_mode, args, mask, binning, wsp, sel, beam)
+        return os.path.join(outdir, f"phase_mode_comparison_{cfg.geom_key()}.log")
+    return os.path.join(outdir, f"validation_{cfg.key()}.log")
+
+
+def main(args):
+    with tee_output(log_path(args)):
+        cfg_geom = build_config(args, phase_mode='shared')
+        mask, binning, wsp, sel, beam = compute_geometry(cfg_geom)
+
+        if args.compare_phase_modes:
+            compare_phase_modes(args, mask, binning, wsp, sel, beam)
+        else:
+            run_phase_mode(args.phase_mode, args, mask, binning, wsp, sel, beam)
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Null-test validation of the pipeline.")
