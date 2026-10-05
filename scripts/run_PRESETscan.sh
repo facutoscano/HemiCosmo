@@ -41,13 +41,13 @@ INDEP="--indep_cov"            # "" to reproduce the in-sample (old) behaviour
 EXTRA="--expected"             # add --compare_cov once if you want the covariance comparison again
 
 COMMON="--north ${NORTH} --nside 1024 --delta_l 30 --lmin 32 --apod 1. \
-        --blend 3. --beam 0.0 --nsims 1000 --n_threads 80 \
+        --blend 3. --beam 0.0 --nsims 1000 --n_threads 100 \
         --phase_mode independent --minuit \
         --naive_mask_h 6 --naive_mask_v 6"
 
 # Reuse v1 sim caches (same seeds -> identical sims; values NOT verifiable: only if the presets
 # were not edited since). Renamed presets (68.5H0 <- 68H0, 200As <- 2As) are mapped automatically.
-ADOPT="--adopt_legacy_cache"   # or "" to regenerate
+ADOPT=""   # or "" to regenerate
 
 LOGDIR="results/logs"
 mkdir -p "$LOGDIR"
