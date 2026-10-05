@@ -74,3 +74,28 @@
 - `scripts/run_PRESETscan.sh`: N=fiducial, S = 62H0 65H0 68.5H0 71H0 74H0, hemi,
   H6+V6 masks, independent phases, Minuit, `--expected`; pass 1 stitched covariance
   (+ `--compare_cov`), pass 2 isotropic covariance (only refits, sims cached).
+
+# Iteration 3 — statistics fixes (a)-(d), second-order plots, full scan
+
+## Fixes
+- (a) `--indep_cov`: the covariance is estimated from an independent set of nsims (seeds
+  nsims..2nsims-1, generated once per mask/geometry). Every tested chi^2 (null and mixed) is
+  then out-of-sample; the old in-sample null had mean alpha*p (Hartlap-deflated) and inflated
+  the empirical Q2 power. Output suffix `_indepcov` (npz, log, figures).
+- (b) "Bias/sigma (vs baseline)": the baseline is an ensemble mean, its error is sigma_null/sqrt(N)
+  -> the column is now in 1-sky sigma (was underestimated by ~sqrt(2)).
+- (c) Minuit-Hesse errors are no longer used: linearization check in Fisher sigma; Fisher and
+  Minuit errors are printed as ratios to the empirical 1-sky scatter; `fit_errors_fisher` saved.
+- (d) the noncentrality line no longer prints a meaningless PTE.
+
+## Plots
+- `hemcosmo/scanio.py`: shared loader (single-parameter hemi runs, filters by cov_mode /
+  indep_cov / phase, dedup of identical injections, first-order prediction, common sigma_ref).
+- `plot_scan.py`: figure 1 as before + figure 2 = (fit - first-order prediction)/sigma_ref with a
+  c x^2 + d x^3 fit per mask (x in 1-sky sigma of the injected parameter).
+- `plot_total.py` (new): 5x6 grid injected x fitted + heat maps of c and max|y| + ranked table.
+
+## Presets / scan
+- `1110omc`, `1302omc` (omch2 at ~ +-5 sigma); legacy aliases 68.5H0<-68H0, 200As<-2As for
+  `--adopt_legacy_cache`.
+- `run_PRESETscan.sh`: all five parameters, isotropic covariance + `--indep_cov` + `--expected`.

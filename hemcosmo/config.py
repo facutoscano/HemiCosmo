@@ -95,7 +95,7 @@ class Cosmology:
         Tag used by the pre-v2 cache files (name only). Only for adoption.
         """
         if self.name:
-            return self.name
+            return LEGACY_NAME_ALIASES.get(self.name, self.name)
         return "H{:.1f}_ob{:.4f}_oc{:.4f}_ns{:.3f}_As{:.3e}".format(
             self.H0, self.ombh2, self.omch2, self.ns, self.As)
 
@@ -144,12 +144,17 @@ PRESETS = {
     "1206omc": replace(FIDUCIAL, omch2=0.1206, name="1206omc"),
     "1234omc": replace(FIDUCIAL, omch2=0.1234, name="1234omc"),
     "1262omc": replace(FIDUCIAL, omch2=0.1262, name="1262omc"),
+    "1110omc": replace(FIDUCIAL, omch2=0.1110, name="1110omc"),   # ~ -5 sigma(1-sky): wider omch2 scan
+    "1302omc": replace(FIDUCIAL, omch2=0.1302, name="1302omc"),   # ~ +5 sigma
     "200As": replace(FIDUCIAL, As=2e-9, name="200As"),
     "204As": replace(FIDUCIAL, As=2.04e-9, name="204As"),
     "208As": replace(FIDUCIAL, As=2.08e-9, name="208As"),
     "212As": replace(FIDUCIAL, As=2.12e-9, name="212As"),
     "216As": replace(FIDUCIAL, As=2.16e-9, name="216As"),
 }
+
+# v2 name -> v1 name of presets that were renamed (only used to adopt v1 sim caches)
+LEGACY_NAME_ALIASES = {"68.5H0": "68H0", "200As": "2As"}
 
 # Ranges for 'random:<seed>'. Kept inside likelihood.LIMITS with margin so a
 # single-cosmology fit cannot rail (the old ombh2 lower edge 0.015 was below

@@ -78,6 +78,8 @@ def bias_summary_regions(fit_values, fit_errors, cosmos, labels, fiducial: Cosmo
                          baseline_label='Null baseline', wbar=None):
     """
     Mixed sky (K regions): report the effective full-sky fit and its bias.
+    baseline_errors must be the error of the baseline ENSEMBLE MEAN (sigma_null/sqrt(N)),
+    so that 'Bias/sigma (vs baseline)' is in units of the 1-sky sigma.
     If wbar is given, also the first-order prediction sum_k wbar_k theta_k
     (shifted by the stitching baseline if one is supplied).
     """
@@ -119,12 +121,13 @@ def bias_summary_regions(fit_values, fit_errors, cosmos, labels, fiducial: Cosmo
         out.update(pred_first_order=pred, dev_first_order_sig=dev)
 
     print_param_table(rows, title="MIXED SKY: EFFECTIVE PARAMETERS & BIAS")
-    print(f"\n  fit chi^2 = {chi2_val:.2f}   ndof = {ndof}   "
-          f"chi^2/ndof = {chi2_val / ndof:.2f}   PTE = {pte(chi2_val, ndof):.3f}"
-          f"   (chi^2 of the MEAN spectrum with 1-sky covariance = noncentrality)")
+    print(f"\n  noncentrality lambda = {chi2_val:.3f}  (chi^2 of the MEAN mixed spectrum vs its "
+          f"best-fit LCDM with the 1-sky covariance = expected per-sky chi^2 excess; "
+          f"NOT a chi^2_{ndof}, no PTE)")
     if have_baseline:
         imax_b = int(np.nanargmax(np.abs(out['bias_sig'])))
-        print(f"  largest bias vs BASELINE: {PARAM_NAMES[imax_b]} at {out['bias_sig'][imax_b]:+.2f} sigma")
+        print(f"  largest bias vs BASELINE: {PARAM_NAMES[imax_b]} at {out['bias_sig'][imax_b]:+.2f} "
+              f"1-sky sigma (baseline = ensemble mean, error sigma/sqrt(N))")
     else:
         print("  WARNING: no baseline supplied -- bias conflates region differences "
               "with the stitching systematic.")

@@ -121,14 +121,23 @@ def sanity_warnings(cfg, cosmos):
 
 
 #%% Pipeline
+def run_suffix(args):
+    """
+    Filename suffix shared by npz / log / figures
+    """
+    suffix = "" if args.cov_mode == "stitched" else f"_cov{args.cov_mode}"
+    if args.indep_cov:
+        suffix += "_indepcov"
+    return suffix
+
+
 def output_paths(args, cfg, cosmos):
     """
     Results folder and the common stem of every output (npz, log, figures)
     """
     tag = run_tag(cfg, cosmos)
     outdir = cfg.results_for(tag)
-    suffix = "" if args.cov_mode == "stitched" else f"_cov{args.cov_mode}"
-    stem = os.path.join(outdir, f"asym_{tag}_{cfg.key()}{suffix}")
+    stem = os.path.join(outdir, f"asym_{tag}_{cfg.key()}{run_suffix(args)}")
     return tag, outdir, stem
 
 
@@ -149,7 +158,7 @@ def run(args, cfg, labels, cosmos, tag, outdir, stem):
           "  ".join(f"{l}={c.name}" for l, c in zip(labels, cosmos)) +
           f"  cov_mode={args.cov_mode}  config={cfg.key()}")
     sanity_warnings(cfg, cosmos)
-    suffix = "" if args.cov_mode == "stitched" else f"_cov{args.cov_mode}"
+    suffix = run_suffix(args)
 
     def fig(name):
         """figure path: same stem as the npz/log, so stitched/isotropic never overwrite"""
@@ -168,16 +177,25 @@ def run(args, cfg, labels, cosmos, tag, outdir, stem):
     wbar = W["wbar_shared"] if cfg.phase_mode == "shared" else W["wbar_indep"]
 
     ### Ensembles
-    #   stitched null: all regions fiducial, same layout & phase_mode (baseline, paired with the mixed sims)
-    #   isotropic    : single sky (blind-analyst covariance / null)
-    null_sims = get_or_generate_region_sims(cfg.nsims, fid_list, cfg, mask, wsp, binning)[:, sel]
-    iso_sims = None
+    #   [0:N]  -> tested ensembles (stitched null, isotropic null, mixed: all paired by seed)
+    #   [N:2N] -> covariance only (--indep_cov): independent seeds, so every tested chi^2
+    #             is out-of-sample (otherwise the null is Hartlap-deflated, mean ~ alpha*p)
+    N = cfg.nsims
+    n_gen = 2 * N if args.indep_cov else N
+    null_all = get_or_generate_region_sims(n_gen, fid_list, cfg, mask, wsp, binning)[:, sel]
+    null_sims = null_all[:N]
+    iso_all = iso_sims = None
     if args.cov_mode == "isotropic" or args.compare_cov:
-        iso_sims = get_or_generate_region_sims(cfg.nsims, [FIDUCIAL], cfg, mask, wsp, binning,
-                                               isotropic=True)[:, sel]
-    ref_sims = iso_sims if args.cov_mode == "isotropic" else null_sims
+        iso_all = get_or_generate_region_sims(n_gen, [FIDUCIAL], cfg, mask, wsp, binning,
+                                              isotropic=True)[:, sel]
+        iso_sims = iso_all[:N]
+    ref_all = iso_all if args.cov_mode == "isotropic" else null_all
+    ref_sims = ref_all[:N]
+    cov_slice = slice(N, None) if args.indep_cov else slice(None, N)
+    print(f"[mixed] covariance from {'INDEPENDENT' if args.indep_cov else 'the SAME (in-sample)'} "
+          f"{args.cov_mode} sims")
 
-    cov = covariance(ref_sims)
+    cov = covariance(ref_all[cov_slice])
     cinv = hartlap_factor(cfg.nsims, nbin) * np.linalg.inv(cov)
     sigma = np.sqrt(np.diag(cov))
 
@@ -210,14 +228,23 @@ def run(args, cfg, labels, cosmos, tag, outdir, stem):
     Dl_eff, A_eff = jac(fit["values"], cfg, wsp, binning, beam, sel)
     freq = frequentist_asymmetry(null_sims, asym_sims, cov, theta0, A, Dl_fid,
                                  fit["values"], A_eff, Dl_eff, nsims_cov=cfg.nsims)
-    lin_gap = (freq["mean_asym_fit"] - fit["values"]) / fit["errors"]
-    print("\n  [linearization check] (frozen-linear mean) - (fit to mean), in Hesse sigma:")
+    fisher_err = freq["hesse_asym"]                   # Fisher at theta_eff, same covariance
+    lin_gap = (freq["mean_asym_fit"] - fit["values"]) / fisher_err
+    print("\n  [linearization check] (frozen-linear mean) - (fit to mean), in Fisher sigma:")
     print("   " + "  ".join(f"{n}={g:+.2f}" for n, g in zip(PARAM_NAMES, lin_gap)))
+    print("  [errors] ratio to the empirical 1-sky scatter:")
+    print("     Fisher : " + "  ".join(f"{n}={f / e:.2f}" for n, f, e in
+                                       zip(PARAM_NAMES, fisher_err, freq["sigma_asym"])))
+    if fit.get("errors") is not None:
+        print("     Minuit : " + "  ".join(f"{n}={m / e:.2f}" for n, m, e in
+                                           zip(PARAM_NAMES, fit["errors"], freq["sigma_asym"]))
+              + f"   (valid={fit.get('valid', 'n/a')}; Minuit-Hesse errors are NOT used anywhere)")
 
     bsum = bias_summary_regions(fit["values"], freq["sigma_asym"], cosmos, labels, FIDUCIAL,
                                 chi2_val=lam_gof, ndof=ndof_param,
                                 baseline_values=null_fit["values"],
-                                baseline_errors=freq["sigma_null"], wbar=wbar)
+                                baseline_errors=freq["sigma_null"] / np.sqrt(cfg.nsims),
+                                wbar=wbar)
 
     ### Q1: is the mixed sky compatible with the fiducial model? (no fit)
     chi2_null = chi2_vs(ref_sims, Dl_fid, cinv)
@@ -256,7 +283,8 @@ def run(args, cfg, labels, cosmos, tag, outdir, stem):
     cov_cmp = {}
     if args.compare_cov and iso_sims is not None:
         print("\n--- [COV] stitched vs isotropic covariance: fit to the same mixed mean ---")
-        covs = {"stitched": covariance(null_sims), "isotropic": covariance(iso_sims)}
+        covs = {"stitched": covariance(null_all[cov_slice]),
+                "isotropic": covariance(iso_all[cov_slice])}
         for name, C in covs.items():
             rf = linear_fit(mean_asym, C, theta0, A.copy(), FIDUCIAL.tau, wsp, binning, cfg,
                             beam=beam, nsims_cov=cfg.nsims, bin_sel=sel, verbose=False)
@@ -336,7 +364,9 @@ def run(args, cfg, labels, cosmos, tag, outdir, stem):
                 b0=freq["b0"], sigma_null=freq["sigma_null"], sigma_asym=freq["sigma_asym"],
                 sigma_pair=freq["sigma_pair"], det_persky=freq["det_persky"],
                 sig_mean=freq["sig_mean"], lin_gap=lin_gap,
-                fiducial=FIDUCIAL.as_vector(), nsims=cfg.nsims, **exp_out)
+                fiducial=FIDUCIAL.as_vector(), nsims=cfg.nsims,
+                fit_errors_fisher=fisher_err, indep_cov=bool(args.indep_cov),
+                fit_valid=bool(fit.get("valid", True)), **exp_out)
     if bsum.get("pred_first_order") is not None:
         save["pred_first_order_weights"] = bsum["pred_first_order"]
     if cfg.layout == "hemi":                       # keys read by plot_scan (v1)
@@ -414,6 +444,9 @@ if __name__ == "__main__":
     p.add_argument("--phase_mode", choices=["shared", "independent"], default="independent")
     p.add_argument("--cov_mode", choices=["stitched", "isotropic"], default="stitched",
                    help="ensemble for covariance and null distributions")
+    p.add_argument("--indep_cov", action="store_true",
+                   help="covariance from an independent set of nsims (seeds nsims..2nsims-1): "
+                        "all tested chi^2 are out-of-sample (recommended)")
     p.add_argument("--compare_cov", action="store_true",
                    help="fit the mixed mean with both covariances and report the shift")
     p.add_argument("--eff_cov", action="store_true",
