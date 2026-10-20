@@ -236,7 +236,9 @@ def classify(results_dir, final_only=False, move_unknown=False, running_h=3.0):
         b = os.path.basename(p)
         if SUMMARY_RE.match(b):
             t = os.path.getmtime(p)
-            if newest_current_npz and t >= newest_current_npz - SLACK:
+            if final_only and "isotropic_indepcov" not in b:
+                add(p, "archive", "summary", "resumen de una covarianza no final (no isotropic_indepcov)")
+            elif newest_current_npz and t >= newest_current_npz - SLACK:
                 add(p, "keep", "summary", "resumen posterior a la última corrida v4")
             else:
                 add(p, "archive", "summary", "resumen desactualizado: regenerar con plot_scan/plot_total")

@@ -1,16 +1,31 @@
 """
-Code Validation Script:
+Validación del pipeline (null test), con la misma estadística que run_asymmetry (v4).
 
-Both hemispheres have the same cosmology (Planck2018 fiducial).
-The hemispheric simulations are constructed, along with their covariance, and a check is performed to verify that an unbiased full-sky LCDM fit is recovered without bias in the cosmology.
+Dos ensambles con N = S = fiducial:
+  shared       una sola fase en todo el cielo. Como sum_k W_k = 1, el cielo compuesto ES el
+               cielo isotrópico (mismas semillas que las sims isotrópicas [0:N]) -> se usa ese
+               cache: es el null del pipeline (estimador + máscara + binning + ajuste).
+  independent  fases independientes en N y S: mide el sistemático de costura. La semilla del
+               Norte es la misma que la del cielo isotrópico -> diferencias PAREADAS por sim.
 
-The --compare_phase_modes flag allows running phase_mode='independent', where North and South are uncorrelated hemispheres with the same reference cosmology, and reports the relative shift compared to phase_mode='shared', which is used in the null hypothesis test.
-For 'run_asymmetry', phase_mode='independent' is used, so it is important to check whether it introduces biases within the same cosmology.
+Estadística (corrige la versión anterior, que usaba errores de Hesse del ajuste a la media):
+  - covarianza ciega (isotrópica) de sims INDEPENDIENTES [N:2N] (--indep_cov): todo chi^2 es
+    out-of-sample (in-sample: media alpha*p, null deflactado);
+  - ajuste por cielo con estimador lineal congelado M = (A^T C^-1 A)^-1 A^T C^-1;
+  - sigma por cielo = dispersión empírica; error de la media = sigma/sqrt(N);
+  - sesgo en unidades de sigma/sqrt(N) (el test correcto de un sesgo del pipeline);
+  - predicción para 'independent': déficit de amplitud eps = 1 - sum_k a_k
+    => Delta p_pred = M (-eps D_fid)  (casi todo en A_s e^{-2tau}: -eps * A_s);
+  - chi^2 por cielo vs fiducial (n_b dof) y vs su propio ajuste (n_b - 5 dof) + KS.
 
----Use the Theory/Masks/Spectrum/Simulations/Likelihood/Linear Response/Plots/Analysis modules---
+Cache: con la máscara del scan (H6+V6) no genera sims nuevas: usa sims_iso_<mask>_fiducial
+(2N) y las del null independiente de run_asymmetry (fiducial/fiducial).
 
-Run with:
-python scripts/run_validation.py --nside 1024 --delta_l 30 --lmin 32 --apod 1. --blend 3. --beam 0.0 --nsims 1000 --n_threads 30 --compare_phase_modes --minuit
+  python scripts/run_validation.py --nside 1024 --delta_l 30 --lmin 32 --apod 1. --blend 3. \
+      --beam 0.0 --nsims 1000 --n_threads 80 --naive_mask_h 6 --naive_mask_v 6 --indep_cov
+
+Salidas: results/validation/validation_<geom_key>_cov<mode>[_indepcov].{log,npz}
+         + _bias.png (sesgos / sigma_mean), _fitdist.png, _chi2.png, _bandpowers.png
 """
 
 import os
@@ -20,214 +35,279 @@ for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
 import sys
 import argparse
 import numpy as np
+from scipy import stats
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from hemcosmo.config import RunConfig, FIDUCIAL, cosmo_from_fit
-from hemcosmo.config import PARAM_NAMES
-from hemcosmo.theory import cosmology_to_cls
-from hemcosmo.masks import load_common_mask, transfer_function, build_mask
-from hemcosmo.spectra import (make_binning, get_workspace, analysis_bin_sel, bandpowers_from_theory)
-from hemcosmo.sims import get_or_generate_sims, covariance
-from hemcosmo.likelihood import fit_bandpowers, fit_to_dict, hartlap_factor
-from hemcosmo.response import compute_jacobian, linear_fit
-from hemcosmo.analysis import validation_summary, frequentist_validation
-from hemcosmo import plots
+from hemcosmo.config import RunConfig, FIDUCIAL, PARAM_NAMES, PARAM_LABELS
+from hemcosmo.masks import transfer_function, build_mask, layout_weights
+from hemcosmo.spectra import make_binning, get_workspace, analysis_bin_sel
+from hemcosmo.sims import get_or_generate_region_sims, covariance
+from hemcosmo.likelihood import hartlap_factor
+from hemcosmo.response import compute_jacobian
+from hemcosmo.analysis import linear_estimator
 from hemcosmo.logutil import tee_output
 
+C_SH, C_IN, C_PRED, GRID = "#1d6fb8", "#c1121f", "#555555", "#dddddd"
+BRANCHES = ("shared", "independent")
 
-def build_config(args, phase_mode=None) -> RunConfig:
+
+def build_config(args, phase_mode="independent") -> RunConfig:
     return RunConfig(nside=args.nside, delta_l=args.delta_l, lmin=args.lmin,
-                     lmax_maps=args.lmax_maps, lmax_analysis=args.lmax_analysis, apod_deg=args.apod, blend_width_deg=args.blend, beam_fwhm_deg=args.beam, nsims=args.nsims, 
-                     n_threads=args.n_threads,
-                     phase_mode=phase_mode if phase_mode is not None else args.phase_mode,
-                     naive_mask_v=args.naive_mask_v,
-                     naive_mask_h=args.naive_mask_h,
-                     naive_l0_deg=args.naive_l0)
+                     lmax_maps=args.lmax_maps, lmax_analysis=args.lmax_analysis,
+                     apod_deg=args.apod, blend_width_deg=args.blend, beam_fwhm_deg=args.beam,
+                     nsims=args.nsims, n_threads=args.n_threads, phase_mode=phase_mode,
+                     naive_mask_h=args.naive_mask_h, naive_mask_v=args.naive_mask_v,
+                     naive_l0_deg=args.naive_l0, adopt_legacy_cache=args.adopt_legacy_cache)
 
-def compute_geometry(cfg: RunConfig):
+
+def stem_for(args):
+    cfg = build_config(args)
+    suffix = f"_cov{args.cov_mode}" + ("_indepcov" if args.indep_cov else "")
+    return os.path.join(cfg.results_for("validation"), f"validation_{cfg.geom_key()}{suffix}")
+
+
+# ----------------------------------------------------------------------------- análisis
+def per_sky(sims, D0, A, M, Cinv, theta0):
     """
-    Mask / binning / workspace / analysis-bin selection / beam
+    Ajuste lineal congelado por cielo + chi^2 vs fiducial y vs el propio ajuste (P_perp r)
     """
+    r = sims - D0[None, :]
+    dp = r @ M.T
+    rp = r - dp @ A.T
+    chi2_fid = np.einsum("ij,jk,ik->i", r, Cinv, r)
+    chi2_fit = np.einsum("ij,jk,ik->i", rp, Cinv, rp)
+    return theta0[None, :] + dp, chi2_fid, chi2_fit
+
+
+def summarize(name, fits, truth, sigma_F, pred):
+    N = fits.shape[0]
+    mean = fits.mean(0)
+    s1 = fits.std(0, ddof=1)
+    sm = s1 / np.sqrt(N)
+    bias = mean - truth
+    out = dict(mean=mean, sigma_1sky=s1, sigma_mean=sm, bias=bias, z_mean=bias / sm,
+               pred=pred, z_resid=(bias - pred) / sm, fisher_ratio=sigma_F / s1)
+    print(f"\n[{name}]  N={N}")
+    print(f"  {'param':>8} | {'bias':>11} {'pred':>11} | {'bias/σ_N':>8} {'(b-p)/σ_N':>9} | "
+          f"{'σ_1sky':>9} {'σ_F/σ_emp':>9}")
+    for i, n in enumerate(PARAM_NAMES):
+        print(f"  {n:>8} | {bias[i]:>+11.3e} {pred[i]:>+11.3e} | {out['z_mean'][i]:>+8.2f} "
+              f"{out['z_resid'][i]:>+9.2f} | {s1[i]:>9.3g} {out['fisher_ratio'][i]:>9.3f}")
+    return out
+
+
+def chi2_report(name, c, dof):
+    ks = stats.kstest(c, "chi2", args=(dof,)).pvalue
+    print(f"  {name:<26s} mean={c.mean():6.2f} (dof {dof})  var={c.var(ddof=1):6.1f} "
+          f"(2dof={2 * dof})  95%={np.percentile(c, 95):6.2f} (χ²: {stats.chi2.ppf(0.95, dof):6.2f})"
+          f"  KS p={ks:.3f}")
+    return ks
+
+
+# ----------------------------------------------------------------------------- plots
+def plot_bias(res, eps, outpath, title):
+    n = len(PARAM_NAMES)
+    fig, axes = plt.subplots(1, n, figsize=(2.3 * n, 3.6), sharey=True)
+    for i, ax in enumerate(axes):
+        ax.axhspan(-2, 2, color=GRID, alpha=0.6, lw=0)
+        ax.axhline(0, color="k", lw=0.8)
+        for x, br, col, mk in ((0, "shared", C_SH, "o"), (1, "independent", C_IN, "s")):
+            ax.errorbar([x], [res[br]["z_mean"][i]], yerr=[1.0], fmt=mk, color=col, ms=7,
+                        capsize=4, lw=1.6)
+        R = res["independent"]
+        ax.plot([1.28], [R["pred"][i] / R["sigma_mean"][i]], "D", mfc="white", mec=C_PRED,
+                ms=7, mew=1.5)
+        ax.set_xticks([0, 1]); ax.set_xticklabels(["shared", "indep"], fontsize=9)
+        ax.set_xlim(-0.5, 1.6)
+        ax.set_title(PARAM_LABELS[i], fontsize=11)
+    axes[0].set_ylabel(r"$(\langle\hat p\rangle-p_{\rm fid})\,/\,(\sigma_{\rm 1sky}/\sqrt{N})$")
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], marker="o", color=C_SH, ls="", label="shared (null del pipeline)"),
+               Line2D([], [], marker="s", color=C_IN, ls="", label="independent (costura)"),
+               Line2D([], [], marker="D", mfc="white", mec=C_PRED, ls="",
+                      label=rf"predicción por déficit $\varepsilon$={eps:.1e}"),
+               plt.Rectangle((0, 0), 1, 1, color=GRID, alpha=0.6, label=r"$\pm2\,\sigma/\sqrt{N}$")]
+    fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=8.5, frameon=False,
+               bbox_to_anchor=(0.5, -0.02))
+    fig.suptitle(title, fontsize=11)
+    fig.tight_layout(rect=[0, 0.07, 1, 0.93])
+    fig.savefig(outpath, dpi=150, bbox_inches="tight"); plt.close(fig)
+    print(f"[plots] saved {outpath}")
+
+
+def plot_fitdist(fits_by, truth, sigma_F, outpath):
+    n = len(PARAM_NAMES)
+    fig, axes = plt.subplots(1, n, figsize=(2.6 * n, 3.4))
+    for i, ax in enumerate(axes):
+        lo = min(f[:, i].min() for f in fits_by.values())
+        hi = max(f[:, i].max() for f in fits_by.values())
+        bins = np.linspace(lo, hi, 35)
+        for br, col in (("shared", C_SH), ("independent", C_IN)):
+            ax.hist(fits_by[br][:, i], bins=bins, density=True, histtype="step", color=col, lw=1.5,
+                    label=br)
+        x = np.linspace(lo, hi, 200)
+        ax.plot(x, stats.norm.pdf(x, truth[i], sigma_F[i]), color="k", lw=0.9, ls="--",
+                label=r"$\mathcal{N}(p_{\rm fid},\sigma_F)$")
+        ax.set_title(PARAM_LABELS[i], fontsize=11); ax.set_yticks([])
+        s = {br: fits_by[br][:, i].std(ddof=1) for br in fits_by}
+        ax.text(0.03, 0.97, f"σ_sh={s['shared']:.3g}\nσ_in={s['independent']:.3g}\nσ_F={sigma_F[i]:.3g}",
+                transform=ax.transAxes, va="top", fontsize=7)
+    axes[0].legend(fontsize=7, loc="lower left", frameon=False)
+    fig.suptitle("Ajustes por cielo (estimador lineal congelado)", fontsize=11)
+    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.savefig(outpath, dpi=150, bbox_inches="tight"); plt.close(fig)
+    print(f"[plots] saved {outpath}")
+
+
+def plot_chi2(chi2_by, nbin, outpath):
+    fig, axes = plt.subplots(1, 2, figsize=(10, 3.8))
+    for ax, key, dof, ttl in ((axes[0], "fid", nbin, "χ² vs fiducial (Q1)"),
+                              (axes[1], "fit", nbin - 5, "χ² vs su propio ajuste ΛCDM (Q2)")):
+        allc = np.concatenate([chi2_by[br][key] for br in BRANCHES])
+        bins = np.linspace(np.percentile(allc, 0.2), np.percentile(allc, 99.8), 40)
+        for br, col in (("shared", C_SH), ("independent", C_IN)):
+            c = chi2_by[br][key]
+            ax.hist(c, bins=bins, density=True, histtype="step", color=col, lw=1.5,
+                    label=f"{br}  ⟨χ²⟩={c.mean():.1f}")
+        x = np.linspace(bins[0], bins[-1], 300)
+        ax.plot(x, stats.chi2.pdf(x, dof), color="k", lw=1, label=rf"$\chi^2_{{{dof}}}$")
+        ax.axvline(stats.chi2.ppf(0.95, dof), color="k", ls=":", lw=1)
+        ax.set_title(ttl, fontsize=11); ax.set_xlabel(r"$\chi^2$"); ax.set_yticks([])
+        ax.legend(fontsize=8, frameon=False, loc="upper right")
+    fig.tight_layout()
+    fig.savefig(outpath, dpi=150, bbox_inches="tight"); plt.close(fig)
+    print(f"[plots] saved {outpath}")
+
+
+def plot_bandpowers(ells, means, Dfid, sigma, N, outpath):
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(7.5, 5.5), sharex=True,
+                                 gridspec_kw=dict(height_ratios=[2.2, 1]))
+    a1.plot(ells, Dfid, color="k", lw=1.2, label="fiducial")
+    for br, col in (("shared", C_SH), ("independent", C_IN)):
+        a1.plot(ells, means[br], ".", color=col, ms=4, label=f"media {br}")
+        a2.errorbar(ells, (means[br] - Dfid) / (sigma / np.sqrt(N)), yerr=1, fmt=".", color=col,
+                    ms=4, lw=0.6, alpha=0.85)
+    a2.axhspan(-2, 2, color=GRID, alpha=0.6, lw=0); a2.axhline(0, color="k", lw=0.8)
+    a1.set_ylabel(r"$D_\ell\ [\mu K^2]$"); a1.legend(fontsize=8, frameon=False)
+    a2.set_ylabel(r"$\Delta D/(\sigma/\sqrt{N})$"); a2.set_xlabel(r"$\ell$")
+    fig.tight_layout()
+    fig.savefig(outpath, dpi=150, bbox_inches="tight"); plt.close(fig)
+    print(f"[plots] saved {outpath}")
+
+
+# ----------------------------------------------------------------------------- main
+def run(args, stem):
+    cfg = build_config(args, "independent")
+    N = cfg.nsims
+    print(f"[validation] geom={cfg.geom_key()}  N={N}  cov={args.cov_mode}"
+          f"{' (set independiente [N:2N])' if args.indep_cov else ' (IN-SAMPLE)'}")
+
     mask = build_mask(cfg, verbose=False)
-    binning = make_binning(cfg)                 # full band up to lmax_maps
+    binning = make_binning(cfg)
     wsp = get_workspace(mask, binning, cfg)
-    sel = analysis_bin_sel(binning, cfg)        # effective_ell <= lmax_analysis
+    sel = analysis_bin_sel(binning, cfg)
     beam = transfer_function(cfg)
-    return mask, binning, wsp, sel, beam
-
-def run_phase_mode(phase_mode, args, mask, binning, wsp, sel, beam):
-    """
-    Run the full null-test pipeline. Returns a dict 
-    """
-    cfg = build_config(args, phase_mode=phase_mode)
-    print(f"[validation] config: {cfg.key()} , nsims={cfg.nsims}")
-    print(f"[validation] bins: workspace={binning.get_n_bands()} "
-          f"(<= lmax_maps={cfg.lmax_maps}) | analysis={int(sel.sum())} "
-          f"(<= lmax_analysis={cfg.lmax_analysis})")
-    if cfg.phase_mode != "shared":
-        print(f"[validation] NOTE: phase_mode='{cfg.phase_mode}' --" 
-              f"this is NOT the pipeline null test;"
-              f"it measures the hemisphere-stitching systematic.")
-
-    outdir = cfg.results_for("validation")
-
-    ells_full = binning.get_effective_ells()
-    ells = ells_full[sel]
+    ells = binning.get_effective_ells()[sel]
     nbin = int(sel.sum())
+    eps = float(layout_weights(cfg, mask)["deficit_indep"])
 
-    sims_full = get_or_generate_sims(cfg.nsims, FIDUCIAL, FIDUCIAL, cfg, mask, wsp, binning)
-    sims = sims_full[:, sel]
-    cov = covariance(sims)
-    mean_null = sims.mean(axis=0)
-    sigma = np.sqrt(np.diag(cov))
+    n_gen = 2 * N if args.indep_cov else N
+    iso_all = get_or_generate_region_sims(n_gen, [FIDUCIAL], cfg, mask, wsp, binning,
+                                          isotropic=True)[:, sel]
+    n_ind = n_gen if args.cov_mode == "stitched" else N
+    ind_all = get_or_generate_region_sims(n_ind, [FIDUCIAL, FIDUCIAL], cfg, mask, wsp,
+                                          binning)[:, sel]
+    ens = dict(shared=iso_all[:N], independent=ind_all[:N])
+    ref = iso_all if args.cov_mode == "isotropic" else ind_all
+    cov = covariance(ref[N:2 * N] if args.indep_cov else ref[:N])
+    sigma_bp = np.sqrt(np.diag(cov))
 
-    ## Theoretical Jacobian 
     theta0 = FIDUCIAL.as_vector()
-    Dl_fid_full, A_full = compute_jacobian(theta0, FIDUCIAL.tau, wsp, binning, cfg, beam)
-    Dl_fid, A = Dl_fid_full[sel], A_full[sel]
+    D_full, A_full = compute_jacobian(theta0, FIDUCIAL.tau, wsp, binning, cfg, beam, verbose=False)
+    Dfid, A = D_full[sel], A_full[sel]
+    est = linear_estimator(cov, A, N)
+    M, Cinv, sigma_F = est["M"], est["Cinv"], est["hesse"]
+    print(f"[validation] Hartlap alpha={est['alpha']:.4f}  nbin={nbin}  eps(indep)={eps:.2e}")
 
-    #######################
-    fit_selftest = linear_fit(Dl_fid, cov, theta0, A.copy(), FIDUCIAL.tau, wsp, binning, cfg, beam=beam, nsims_cov=cfg.nsims, bin_sel=sel)
-    print("[SELFTEST] fit to Dl_fid (should recover fiducial exactly):")
-    print("  recovered:", fit_selftest["values"])
-    print("  fiducial :", FIDUCIAL.as_vector())
-    print("  diff/err :", (fit_selftest["values"]-FIDUCIAL.as_vector())/fit_selftest["errors"])
-    #######################
+    pred = dict(shared=np.zeros(len(theta0)), independent=M @ (-eps * Dfid))
+    res, fits_by, chi2_by = {}, {}, {}
+    for br in BRANCHES:
+        fits, c_fid, c_fit = per_sky(ens[br], Dfid, A, M, Cinv, theta0)
+        fits_by[br], chi2_by[br] = fits, dict(fid=c_fid, fit=c_fit)
+        res[br] = summarize(br, fits, theta0, sigma_F, pred[br])
 
-    ## Fit the mean bandpowers
-    if args.minuit:
-        fit = fit_to_dict(fit_bandpowers(mean_null, cov, wsp, binning, cfg,
-                                         FIDUCIAL.tau, nsims_cov=cfg.nsims, beam=beam, bin_sel=sel))
-    else:
-        fit = linear_fit(mean_null, cov, theta0, A.copy(), FIDUCIAL.tau, wsp, binning, cfg, beam=beam, nsims_cov=cfg.nsims, bin_sel=sel)
-        print(f"[response] converged={fit['converged']}  n_iter={fit.get('n_iter','?')}  dtheta={fit['dtheta']}")
+    d = fits_by["independent"] - fits_by["shared"]
+    d_mean, d_err = d.mean(0), d.std(0, ddof=1) / np.sqrt(N)
+    print("\n[paired] independent - shared  (misma semilla en el Norte)")
+    for i, n in enumerate(PARAM_NAMES):
+        print(f"  {n:>8}: Δ={d_mean[i]:+.3e} ± {d_err[i]:.1e}   pred={pred['independent'][i]:+.3e}"
+              f"   (Δ-pred)/err={(d_mean[i] - pred['independent'][i]) / d_err[i]:+.2f}")
 
-    vld = fit.get("valid", "n/a")
-    print(f"[fit] best-fit chi2 = {fit['chi2']:.2f}  (ndof = {nbin - 5})  valid = {vld}")
+    print("\n[chi2] " + ("out-of-sample" if args.indep_cov else "IN-SAMPLE (null deflactado)"))
+    for br in BRANCHES:
+        chi2_report(f"{br} vs fiducial", chi2_by[br]["fid"], nbin)
+        chi2_report(f"{br} vs propio ajuste", chi2_by[br]["fit"], nbin - 5)
 
-    ## Chi^2 distribution
-    cinv = hartlap_factor(cfg.nsims, nbin) * np.linalg.inv(cov)
-    resid = sims - Dl_fid
-    chi2_null = np.einsum("ij,jk,ik->i", resid, cinv, resid)
+    z_sh = np.max(np.abs(res["shared"]["z_mean"]))
+    z_in = np.max(np.abs(res["independent"]["z_resid"]))
+    print(f"\n[verdict] max |sesgo/σ_N| shared = {z_sh:.2f};  "
+          f"max |(sesgo - pred)/σ_N| independent = {z_in:.2f}  -> "
+          f"{'OK' if max(z_sh, z_in) < 3 else 'REVISAR'}")
+    print("  σ_F/σ_emp (shared): " + "  ".join(f"{n}={v:.3f}" for n, v in
+                                                zip(PARAM_NAMES, res["shared"]["fisher_ratio"])))
 
-    ndof_param = nbin - 5
-    validation_summary(fit["values"], fit["errors"], FIDUCIAL,
-                   chi2_val=fit["chi2"], ndof=nbin - 5)
-    print(f"\n  null chi^2 (vs fiducial, fixed model): "
-          f"mean={chi2_null.mean():.1f} (expect ~{nbin}), "
-          f"median={np.median(chi2_null):.1f}, 95%={np.percentile(chi2_null, 95):.1f}")
-    print(f"  (param-recovery fit uses ndof = nbin - 5 = {ndof_param})")
+    np.savez_compressed(stem + ".npz", ells=ells, Dl_fid=Dfid, cov=cov, sigma_F=sigma_F, eps=eps,
+                        nsims=N, indep_cov=bool(args.indep_cov), cov_mode=args.cov_mode,
+                        paired_diff=d_mean, paired_err=d_err,
+                        **{f"{k}_{br}": v for br in BRANCHES for k, v in res[br].items()},
+                        **{f"fits_{br}": fits_by[br] for br in BRANCHES},
+                        **{f"chi2_{key}_{br}": chi2_by[br][key] for br in BRANCHES
+                           for key in ("fid", "fit")},
+                        **{f"meanbp_{br}": ens[br].mean(0) for br in BRANCHES})
+    print(f"\n[validation] saved {stem}.npz")
 
-    # Frequentist null test: fit each sim individually, frozen Jacobian
-
-    freq = frequentist_validation(sims, cov, theta0, A, Dl_fid,
-                                  FIDUCIAL.as_vector(), nsims_cov=cfg.nsims)
-    plots.plot_fit_distribution(
-        freq["fits"], FIDUCIAL.as_vector(), freq["hesse"],
-        os.path.join(outdir, f"validation_fitdist_{cfg.key()}.png"),
-        title=f"Per-sim fit distribution ({cfg.phase_mode})")
-
-    ## Saving & Plotting
-    out = os.path.join(outdir, f"validation_{cfg.key()}.npz")
-    np.savez_compressed(out, ells=ells, mean_null=mean_null, cov=cov,
-                        Dl_fid=Dl_fid, chi2_null=chi2_null,
-                        fit_values=fit["values"], fit_errors=fit["errors"],
-                        param_cov=fit["cov"], nsims=cfg.nsims,
-                        lmax_maps = cfg.lmax_maps, lmax_analysis=cfg.lmax_analysis, 
-                        freq_fit = freq['fits'], freq_zmean = freq['z_mean'],
-                        freq_zstd = freq['z_std'], freq_hesse = freq['hesse_ratio'])
-    print(f"\n[validation] saved {out}")
-
-    best_cosmo = cosmo_from_fit(*fit["values"], FIDUCIAL.tau)
-    cl_best = cosmology_to_cls(best_cosmo, cfg.lmax_synth, cfg.lens_potential_accuracy)
-    model_bestfit = bandpowers_from_theory(cl_best, wsp, binning, beam=beam)[sel]
-    plots.plot_bandpowers(ells, mean_null, model_bestfit, sigma,
-                          os.path.join(outdir, f"validation_bandpowers_{cfg.key()}.png"),
-                          title="Null test: mean sims vs best-fit LCDM")
-
-    return dict(cfg=cfg, 
-                fit=fit, chi2_null=chi2_null, Dl_fid=Dl_fid,
-                mean_null=mean_null, cov=cov, sigma=sigma, 
-                ells=ells, nbin=nbin)
-
-def compare_phase_modes(args, mask, binning, wsp, sel, beam):
-    """
-    Run both phase_mode branches and report the parameter shift
-    """
-    results = {}
-    for pm in ('shared', 'independent'):
-        results[pm] = run_phase_mode(pm, args, mask, binning, wsp, sel, beam)
-
-    fs, fi = results['shared']['fit'], results['independent']['fit']
-    diff = fi['values'] - fs['values']
-    sigma_diff = np.sqrt(fs['errors']**2 + fi['errors']**2)
-    pull = np.divide(diff, sigma_diff, out=np.full_like(diff, np.nan), where=sigma_diff > 0)
-
-    
-    print("\n[validation] phase_mode comparison (independent - shared):")
-
-    for name, d, s, p in zip(PARAM_NAMES, diff, sigma_diff, pull):
-        print(f"  {name:>8s}: diff={d:+.4g}   sigma_diff={s:.4g}   pull={p:+.2f} sigma")
- 
-    cfg_shared = results["shared"]["cfg"]
-    out = os.path.join(cfg_shared.results_for('validation'), f"phase_mode_comparison_{cfg_shared.geom_key()}.npz")
-    np.savez_compressed(out,
-                        values_shared=fs["values"], errors_shared=fs["errors"],
-                        values_indep=fi["values"], errors_indep=fi["errors"],
-                        diff=diff, sigma_diff=sigma_diff, pull=pull,
-                        nsims=cfg_shared.nsims)
-    print(f"[validation] saved {out}")
- 
-    plots.plot_phase_mode_comparison(
-        fs["values"], fs["errors"], fi["values"], fi["errors"], FIDUCIAL.as_vector(),
-        os.path.join(cfg_shared.results_for('validation'), f"phase_mode_comparison_{cfg_shared.geom_key()}.png"),
-        title="Null test vs hemisphere-stitching systematic")
-
-def log_path(args):
-    """
-    Same stem as the npz the run writes:
-      --compare_phase_modes -> validation/phase_mode_comparison_<geom_key>.log (both branches)
-      otherwise             -> validation/validation_<key>.log
-    """
-    cfg = build_config(args, phase_mode=None if not args.compare_phase_modes else "shared")
-    outdir = cfg.results_for("validation")
-    if args.compare_phase_modes:
-        return os.path.join(outdir, f"phase_mode_comparison_{cfg.geom_key()}.log")
-    return os.path.join(outdir, f"validation_{cfg.key()}.log")
+    mtag = cfg._mask_part().strip("_") or "common"
+    plot_bias(res, eps, stem + "_bias.png", f"Null test ({mtag}, N={N}): sesgo en σ de la media")
+    plot_fitdist(fits_by, theta0, sigma_F, stem + "_fitdist.png")
+    plot_chi2(chi2_by, nbin, stem + "_chi2.png")
+    plot_bandpowers(ells, {br: ens[br].mean(0) for br in BRANCHES}, Dfid, sigma_bp, N,
+                    stem + "_bandpowers.png")
 
 
 def main(args):
-    with tee_output(log_path(args)):
-        cfg_geom = build_config(args, phase_mode='shared')
-        mask, binning, wsp, sel, beam = compute_geometry(cfg_geom)
+    if args.compare_phase_modes or args.phase_mode or args.minuit:
+        print("[validation] NOTE: --compare_phase_modes / --phase_mode / --minuit ya no hacen "
+              "falta: siempre se corren shared e independent con el estimador lineal.")
+    stem = stem_for(args)
+    with tee_output(stem + ".log"):
+        run(args, stem)
 
-        if args.compare_phase_modes:
-            compare_phase_modes(args, mask, binning, wsp, sel, beam)
-        else:
-            run_phase_mode(args.phase_mode, args, mask, binning, wsp, sel, beam)
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="Null-test validation of the pipeline.")
-    p.add_argument("--nside", type=int, default=512)
+    p = argparse.ArgumentParser(description="Null-test validation of the pipeline (v4 statistics).")
+    p.add_argument("--nside", type=int, default=1024)
     p.add_argument("--delta_l", type=int, default=30)
-    p.add_argument("--lmin", type=int, default=30)
-    p.add_argument("--lmax_maps", type=int, default=None, help='Workspace/binning band (default 2*nside)')
-    p.add_argument("--lmax_analysis", type=int, default=None, help='analysis cut for the fit (default 1.5*nside)')
-    p.add_argument("--apod", type=float, default=3.0)
-    p.add_argument("--blend", type=float, default=5.0)
+    p.add_argument("--lmin", type=int, default=32)
+    p.add_argument("--lmax_maps", type=int, default=None)
+    p.add_argument("--lmax_analysis", type=int, default=None)
+    p.add_argument("--apod", type=float, default=1.0)
+    p.add_argument("--blend", type=float, default=3.0)
     p.add_argument("--beam", type=float, default=0.0)
-    p.add_argument("--nsims", type=int, default=300)
-    p.add_argument("--n_threads", type=int, default=None,
-                   help="sim workers (default: 50%% of logical cores)")
-    p.add_argument("--minuit", action="store_true",
-                   help="use the nonlinear Minuit fit instead of linear response")
-    p.add_argument("--phase_mode", choices=["shared", "independent"], default="shared", help="'shared' = null test (unbiased case). 'independent' = test for the hemisphere-stitching systematic. Ignored if --compare_phase_modes is set.")
-    p.add_argument("--compare_phase_modes", action="store_true",
-                   help="run both 'shared' and 'independent' branches and report/plot the parameter shift.")
-    p.add_argument("--naive_mask_h", type=float, default=None,
-                       help="width (deg) of an equatorial band; not common mask")
-    p.add_argument("--naive_mask_v", type=float, default=None,
-                       help="width (deg) of an meridian band")
+    p.add_argument("--nsims", type=int, default=1000)
+    p.add_argument("--n_threads", type=int, default=None)
+    p.add_argument("--naive_mask_h", type=float, default=None)
+    p.add_argument("--naive_mask_v", type=float, default=None)
     p.add_argument("--naive_l0", type=float, default=0.0)
+    p.add_argument("--cov_mode", choices=["isotropic", "stitched"], default="isotropic")
+    p.add_argument("--indep_cov", action="store_true",
+                   help="covarianza de sims [N:2N] independientes (recomendado)")
+    p.add_argument("--adopt_legacy_cache", action="store_true")
+    # compatibilidad con la versión anterior (ignorados)
+    p.add_argument("--compare_phase_modes", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--phase_mode", default=None, help=argparse.SUPPRESS)
+    p.add_argument("--minuit", action="store_true", help=argparse.SUPPRESS)
     main(p.parse_args())
