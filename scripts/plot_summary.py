@@ -5,10 +5,10 @@ Figuras-resumen del scan (todas las corridas de una vez), para las slides.
   summary_detectability_<tag>.png
      (a) Q1 (vs fiducial) potencia vs corrimiento inyectado [σ por cielo del parámetro inyectado]
      (b) Q2 (vs su propio ajuste ΛCDM) potencia vs corrimiento inyectado
-     (c) Q2: potencia empírica vs λ₂ de cada corrida, sobre la curva no central β(λ; ν=n_b−5)
-         -> prueba del modelo estadístico con las 25 corridas a la vez
+     (c) Q2: potencia de las sims vs predicha, con y sin el término de varianza δν
+         (covarianza fiducial ≠ covarianza del cielo mezclado)
   summary_H0budget_<tag>.png
-     (a) ΔĤ0 = Ĥ0 − H̄0 vs Var_w(ln θ*) para todas las corridas (ley ΔĤ0 ≈ −2×10⁴ Var_w)
+     (a) ΔĤ0 (pareado con el null cosido) vs Var_w(ln θ*) para todas las corridas (ley ΔĤ0 ≈ −2×10⁴ Var_w)
      (b) presupuesto de ΔĤ0 por corrida: transferencia geométrica (ω_b, ω_c) + parte en θ*
          ΔĤ0 = [Δlnθ̂* − g_b Δω̂_b − g_c Δω̂_c]/g_H
 
@@ -29,6 +29,7 @@ from hemcosmo.config import RESULTS_DIR, FIDUCIAL, PARAM_NAMES, PARAM_LABELS
 from hemcosmo.scanio import load_runs
 from hemcosmo.analysis import noncentral_power
 from hemcosmo.acoustic import lntheta, sensitivities
+from scipy.stats import ncx2
 
 COLORS = {"H0": "#2a78d6", "ombh2": "#1baf7a", "omch2": "#eb6834", "ns": "#8a5cc2",
           "As_tau": "#eda100"}
@@ -58,19 +59,33 @@ def collect(runs):
         lth = np.array([lt(v) for v in vecs])
         var_w = float(w @ (lth - w @ lth) ** 2)
         fit = np.asarray(d["fit_values"], float)
-        dlnth = lt(fit) - lt(pbar)
-        dwb, dwc = fit[1] - pbar[1], fit[2] - pbar[2]
+        base = np.asarray(d["null_fit_values"], float)
+        # Diferencias PAREADAS con el null cosido (mismas semillas en todas las corridas): se resta
+        # el ruido MC común y el déficit eps.  Δp = (p̂ - p̂_null) - (p̄ - p_fid)
+        dp = (fit - base) - (pbar - fid)
+        dlnth = (lt(fit) - lt(base)) - (lt(pbar) - lt(fid))
         sig = float(r["sig_null6"][{0: 0, 1: 1, 2: 2, 3: 3, 4: 5}[inj]])
         nb = len(d["ells"])
+        nu = nb - 5
         nsims = int(d["nsims"])
+        lam2 = max(float(d["sys_chi2"]) - nu / nsims, 1e-3)              # quita el piso MC ν/N
+        # Q2 con covarianza fiducial: además de λ₂ (media), la varianza del cielo mezclado difiere
+        # de la de C:  ⟨χ²⟩ = tr[C⁻¹P⊥C_mix P⊥ᵀ] + λ₂.  Con C_mix ≈ S C S, S = diag(D_mix/D_fid):
+        # δν ≈ (ν/n_b)·2·Σ_b s_b  (exacto para un cambio de amplitud) -> χ² escala (1+δν/ν).
+        s_b = np.asarray(d["mean_asym"], float) / np.asarray(d["Dl_fid"], float) - 1.0
+        dnu_pred = nu / nb * 2.0 * float(s_b.sum())
+        g_null, g_asym = np.asarray(d["chi2_gof_null"], float), np.asarray(d["chi2_gof_asym"], float)
+        q95 = float(np.percentile(g_null, 95))
+        dnu_emp = float(g_asym.mean() - g_null.mean() - lam2)
+        p2_full = float(ncx2.sf(q95 * nu / (nu + dnu_pred), nu, lam2))
         out.append(dict(
             name=name, south=str(np.asarray(d["region_names"])[1]), x=r["dtheta"] / sig,
-            n=nsims, nu=nb - 5,
+            n=nsims, nu=nu,
             p1=float(d["power_q1"]), p1_pred=float(d["power_q1_pred"]),
-            p2=float(d["power_gof"]), p2_pred=float(d["power_gof_pred"]),
-            lam2=max(float(d["sys_chi2"]) - (nb - 5) / nsims, 1e-3),     # quita el piso MC ν/N
-            var_w=var_w, dH0=fit[0] - pbar[0],
-            geo=(-gb * dwb - gc * dwc) / gH, th=dlnth / gH))
+            p2=float(d["power_gof"]), p2_pred=float(d["power_gof_pred"]), p2_full=p2_full,
+            lam2=lam2, dnu_pred=dnu_pred, dnu_emp=dnu_emp,
+            var_w=var_w, dH0=dp[0],
+            geo=(-gb * dp[1] - gc * dp[2]) / gH, th=dlnth / gH))
     return out, (gH, gb, gc)
 
 
@@ -91,7 +106,11 @@ def fig_detectability(R, outpath, title):
         for n in names:
             rr = sorted([r for r in R if r["name"] == n], key=lambda r: r["x"])
             x = np.array([r["x"] for r in rr])
-            ax.plot(x, [r[key + "_pred"] for r in rr], "-", color=COLORS[n], lw=1, alpha=0.6)
+            if key == "p2":
+                ax.plot(x, [r["p2_full"] for r in rr], "-", color=COLORS[n], lw=1.1, alpha=0.75)
+                ax.plot(x, [r["p2_pred"] for r in rr], ":", color=COLORS[n], lw=1, alpha=0.6)
+            else:
+                ax.plot(x, [r[key + "_pred"] for r in rr], "-", color=COLORS[n], lw=1, alpha=0.6)
             ax.errorbar(x, [r[key] for r in rr], yerr=[binom_err(r[key], r["n"]) for r in rr],
                         fmt="o", color=COLORS[n], ms=5, capsize=2, lw=1)
         ax.axhline(ALPHA, color=MUTED, ls=":", lw=1)
@@ -102,24 +121,26 @@ def fig_detectability(R, outpath, title):
         ax.grid(color=GRID, lw=0.5)
     axes[0].set_ylim(-0.02, 1.04)
     axes[1].set_ylim(0, max(0.2, 1.15 * max(r["p2"] for r in R)))
-    axes[1].text(0.02, 0.97, "puntos: sims · líneas: χ² no central", transform=axes[1].transAxes,
-                 va="top", fontsize=8, color=MUTED)
+    axes[1].text(0.02, 0.97, "puntos: sims\n— : χ²(λ₂) + varianza δν\n··· : sólo λ₂",
+                 transform=axes[1].transAxes, va="top", fontsize=8, color=MUTED)
 
     ax = axes[2]
-    nu = R[0]["nu"]
-    lam = np.logspace(-3, 1.3, 200)
-    ax.plot(lam, [noncentral_power(l, nu) for l in lam], color=INK, lw=1.2,
-            label=rf"$\beta(\lambda)$, $\chi^2_{{{nu}}}(\lambda)$")
+    hi = 1.1 * max(max(r["p2"], r["p2_full"], r["p2_pred"]) for r in R)
+    lo = 0.8 * min(min(r["p2"], r["p2_full"]) for r in R)
+    ax.plot([lo, hi], [lo, hi], color=INK, lw=1)
     for r in R:
-        ax.errorbar(r["lam2"], r["p2"], yerr=binom_err(r["p2"], r["n"]), fmt="o", color=COLORS[r["name"]],
-                    ms=5, capsize=2, lw=1)
-    ax.axhline(ALPHA, color=MUTED, ls=":", lw=1)
-    ax.set_xscale("log")
-    ax.set_xlabel(r"$\lambda_2=\|\mathsf{P}_\perp\,\delta D\|^2_{C^{-1}}$  (piso MC $\nu/N$ restado)")
+        e = binom_err(r["p2"], r["n"])
+        ax.errorbar(r["p2_full"], r["p2"], yerr=e, fmt="o", color=COLORS[r["name"]], ms=5,
+                    capsize=2, lw=1)
+        ax.plot(r["p2_pred"], r["p2"], "o", mfc="none", mec=COLORS[r["name"]], ms=5, alpha=0.6)
+    ax.axhline(ALPHA, color=MUTED, ls=":", lw=1); ax.axvline(ALPHA, color=MUTED, ls=":", lw=1)
+    ax.set_xlim(lo, hi); ax.set_ylim(lo, hi)
+    ax.set_xlabel("potencia Q2 predicha")
     ax.set_ylabel("potencia Q2 (sims)")
-    ax.set_title("Q2: ¿el modelo no central describe las sims?", fontsize=10.5)
-    ax.grid(color=GRID, lw=0.5, which="both")
-    ax.legend(fontsize=8, frameon=False, loc="upper left")
+    ax.set_title("Q2: predicción vs sims", fontsize=10.5)
+    ax.text(0.03, 0.97, "llenos: λ₂ + δν (varianza de C_mix)\nvacíos: sólo λ₂", transform=ax.transAxes,
+            va="top", fontsize=8, color=MUTED)
+    ax.grid(color=GRID, lw=0.5)
 
     fig.legend(handles=legend_handles(names), loc="lower center", ncol=len(names), frameon=False,
                fontsize=9, bbox_to_anchor=(0.5, -0.03))
@@ -196,11 +217,12 @@ def main(a):
     tag = f"{mask}_{a.cov_mode}" + ("_indepcov" if a.indep_cov else "")
     N = R[0]["n"]
     print(f"[summary] {len(R)} corridas  máscara={mask}  N={N}")
-    print(f"  {'south':>10} {'x[σ]':>7} {'Q1':>6} {'Q1p':>6} {'Q2':>6} {'Q2p':>6} {'λ2':>7} "
-          f"{'Var_w·1e5':>9} {'ΔH0':>7} {'geo':>7} {'θ*':>7}")
+    print(f"  {'south':>10} {'x[σ]':>7} {'Q1':>6} {'Q1p':>6} {'Q2':>6} {'Q2p':>6} {'Q2p+δν':>7} {'λ2':>7} "
+          f"{'δν_emp':>7} {'δν_pred':>7} {'Var_w·1e5':>9} {'ΔH0':>7} {'geo':>7} {'θ*':>7}")
     for r in sorted(R, key=lambda r: (PARAM_NAMES.index(r["name"]), r["x"])):
         print(f"  {r['south']:>10} {r['x']:>+7.2f} {r['p1']:>6.3f} {r['p1_pred']:>6.3f} {r['p2']:>6.3f} "
-              f"{r['p2_pred']:>6.3f} {r['lam2']:>7.3f} {r['var_w'] * 1e5:>9.3f} {r['dH0']:>+7.3f} "
+              f"{r['p2_pred']:>6.3f} {r['p2_full']:>7.3f} {r['lam2']:>7.3f} {r['dnu_emp']:>+7.2f} "
+              f"{r['dnu_pred']:>+7.2f} {r['var_w'] * 1e5:>9.3f} {r['dH0']:>+7.3f} "
               f"{r['geo']:>+7.3f} {r['th']:>+7.3f}")
     fig_detectability(R, os.path.join(a.outdir, f"summary_detectability_{tag}.png"),
                       f"Detectabilidad de la mezcla N/S ({mask}, N={N} cielos)")
