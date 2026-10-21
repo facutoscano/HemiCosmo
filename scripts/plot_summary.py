@@ -100,83 +100,93 @@ def legend_handles(names):
 
 def fig_detectability(R, outpath, title):
     names = [n for n in PARAM_NAMES if any(r["name"] == n for r in R)]
-    fig, axes = plt.subplots(1, 3, figsize=(14.5, 4.2))
-    for ax, key, ttl in ((axes[0], "p1", "Q1: ¿compatible con el fiducial?  (oráculo)"),
-                         (axes[1], "p2", "Q2: ¿pasa como un único ΛCDM?")):
+    N = R[0]["n"]
+    band = 2 * np.sqrt(ALPHA * (1 - ALPHA) / N)            # ±2σ binomial del null
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.6))
+    specs = ((axes[0], "p1", "Q1: ¿el cielo mezclado pasa como el fiducial?"),
+             (axes[1], "p2", "Q2: ¿pasa como un único ΛCDM?"))
+    for ax, key, ttl in specs:
+        ax.axhspan(1 - ALPHA - band, 1 - ALPHA + band, color=GRID, alpha=0.9, lw=0)
+        ax.axhline(1 - ALPHA, color=MUTED, lw=0.8)
         for n in names:
             rr = sorted([r for r in R if r["name"] == n], key=lambda r: r["x"])
             x = np.array([r["x"] for r in rr])
-            if key == "p2":
-                ax.plot(x, [r["p2_full"] for r in rr], "-", color=COLORS[n], lw=1.1, alpha=0.75)
-                ax.plot(x, [r["p2_pred"] for r in rr], ":", color=COLORS[n], lw=1, alpha=0.6)
-            else:
-                ax.plot(x, [r[key + "_pred"] for r in rr], "-", color=COLORS[n], lw=1, alpha=0.6)
-            ax.errorbar(x, [r[key] for r in rr], yerr=[binom_err(r[key], r["n"]) for r in rr],
+            pred = [r["p2_full"] for r in rr] if key == "p2" else [r["p1_pred"] for r in rr]
+            ax.plot(x, 1 - np.array(pred), "-", color=COLORS[n], lw=1.1, alpha=0.7)
+            ax.errorbar(x, [1 - r[key] for r in rr], yerr=[binom_err(r[key], r["n"]) for r in rr],
                         fmt="o", color=COLORS[n], ms=5, capsize=2, lw=1)
-        ax.axhline(ALPHA, color=MUTED, ls=":", lw=1)
         ax.axvline(0, color=GRID, lw=1)
-        ax.set_xlabel(r"corrimiento inyectado $\Delta_i/\sigma_i$  (σ por cielo)")
-        ax.set_ylabel("potencia @ 95%")
+        ax.set_xlabel(r"corrimiento inyectado en el Sur $\Delta_i/\sigma_i$  ($\sigma$ por cielo)")
+        ax.set_ylabel("fracción de cielos que pasan el test")
         ax.set_title(ttl, fontsize=10.5)
         ax.grid(color=GRID, lw=0.5)
-    axes[0].set_ylim(-0.02, 1.04)
-    axes[1].set_ylim(0, max(0.2, 1.15 * max(r["p2"] for r in R)))
-    axes[1].text(0.02, 0.97, "puntos: sims\n— : χ²(λ₂) + varianza δν\n··· : sólo λ₂",
-                 transform=axes[1].transAxes, va="top", fontsize=8, color=MUTED)
+    axes[0].set_ylim(-0.03, 1.03)
+    lo2 = min(1 - r["p2"] - binom_err(r["p2"], r["n"]) for r in R)
+    axes[1].set_ylim(min(0.85, lo2 - 0.01), 1.0)
+    h_common = [plt.Rectangle((0, 0), 1, 1, color=GRID, label=r"cielos $\Lambda$CDM verdaderos (0.95 $\pm2\sigma$)"),
+                Line2D([], [], marker="o", ls="", color=INK, label="sims"),
+                Line2D([], [], ls="-", color=INK, label="predicción")]
+    axes[0].legend(handles=h_common, fontsize=8, loc="center right", frameon=True)
+    h_q2 = h_common[:2] + [Line2D([], [], ls="-", color=INK, label=r"predicción ($\lambda_2+\delta\nu$)")]
+    axes[1].legend(handles=h_q2, fontsize=8, loc="lower right", frameon=True)
 
     ax = axes[2]
     hi = 1.1 * max(max(r["p2"], r["p2_full"], r["p2_pred"]) for r in R)
     lo = 0.8 * min(min(r["p2"], r["p2_full"]) for r in R)
     ax.plot([lo, hi], [lo, hi], color=INK, lw=1)
     for r in R:
-        e = binom_err(r["p2"], r["n"])
-        ax.errorbar(r["p2_full"], r["p2"], yerr=e, fmt="o", color=COLORS[r["name"]], ms=5,
-                    capsize=2, lw=1)
+        ax.errorbar(r["p2_full"], r["p2"], yerr=binom_err(r["p2"], r["n"]), fmt="o",
+                    color=COLORS[r["name"]], ms=5, capsize=2, lw=1)
         ax.plot(r["p2_pred"], r["p2"], "o", mfc="none", mec=COLORS[r["name"]], ms=5, alpha=0.6)
     ax.axhline(ALPHA, color=MUTED, ls=":", lw=1); ax.axvline(ALPHA, color=MUTED, ls=":", lw=1)
     ax.set_xlim(lo, hi); ax.set_ylim(lo, hi)
-    ax.set_xlabel("potencia Q2 predicha")
-    ax.set_ylabel("potencia Q2 (sims)")
+    ax.set_xlabel("potencia Q2 predicha"); ax.set_ylabel("potencia Q2 (sims)")
     ax.set_title("Q2: predicción vs sims", fontsize=10.5)
-    ax.text(0.03, 0.97, "llenos: λ₂ + δν (varianza de C_mix)\nvacíos: sólo λ₂", transform=ax.transAxes,
-            va="top", fontsize=8, color=MUTED)
+    ax.legend(handles=[Line2D([], [], marker="o", ls="", color=INK, label=r"predicción $\lambda_2+\delta\nu$"),
+                       Line2D([], [], marker="o", ls="", mfc="none", mec=INK, label=r"predicción sólo $\lambda_2$"),
+                       Line2D([], [], ls="-", color=INK, label="1:1")],
+              fontsize=8, loc="upper left", frameon=True)
     ax.grid(color=GRID, lw=0.5)
 
-    fig.legend(handles=legend_handles(names), loc="lower center", ncol=len(names), frameon=False,
-               fontsize=9, bbox_to_anchor=(0.5, -0.03))
+    fig.legend(handles=legend_handles(names), loc="lower center", ncol=len(names), frameon=True,
+               fontsize=9, bbox_to_anchor=(0.5, -0.04), title="parámetro inyectado en el Sur",
+               title_fontsize=9)
     fig.suptitle(title, fontsize=11)
-    fig.tight_layout(rect=[0, 0.06, 1, 0.94])
+    fig.tight_layout(rect=[0, 0.09, 1, 0.94])
     fig.savefig(outpath, dpi=160, bbox_inches="tight"); plt.close(fig)
     print(f"[summary] saved {outpath}")
 
 
-def fig_budget(R, g, outpath, title, min_abs=0.05):
-    names = [n for n in PARAM_NAMES if any(r["name"] == n for r in R)]
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(13, 4.6), gridspec_kw=dict(width_ratios=[1, 1.15]))
+def fig_budget(R, g, outpath, title, keep=("H0", "ombh2", "omch2"), label_min=0.05):
+    R = [r for r in R if r["name"] in keep]
+    names = [n for n in PARAM_NAMES if n in keep and any(r["name"] == n for r in R)]
+    lab = dict(zip(PARAM_NAMES, PARAM_LABELS))
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(13.5, 5.2), gridspec_kw=dict(width_ratios=[1, 1.15]))
 
     X = np.array([r["var_w"] for r in R]) * 1e5
     Y = np.array([r["dH0"] for r in R])
     for r, x, y in zip(R, X, Y):
         a1.plot(x, y, "o", color=COLORS[r["name"]], ms=6)
     xx = np.linspace(0, 1.05 * X.max() if X.max() > 0 else 1, 50)
-    a1.plot(xx, -2e4 * xx * 1e-5, color=INK, lw=1, ls="--", label=r"$-2\times10^4\,\mathrm{Var}_w$")
     for n in ("H0", "omch2"):
         m = np.array([r["name"] == n for r in R]) & (X > 0)
         if m.sum() >= 2:
-            k = float((X[m] * Y[m]).sum() / (X[m] ** 2).sum())
-            a1.plot(xx, k * xx, color=COLORS[n], lw=1, alpha=0.7,
-                    label=rf"ajuste fuente {dict(zip(PARAM_NAMES, PARAM_LABELS))[n]}: {k * 1e5:+.2g}$\,\mathrm{{Var}}_w$")
+            k = float((X[m] * Y[m]).sum() / (X[m] ** 2).sum())        # pendiente por el origen
+            a1.plot(xx, k * xx, color=COLORS[n], lw=1.2, alpha=0.8,
+                    label=rf"pendiente ajustada ({lab[n]}): ${k * 1e5 / 1e4:+.2f}\times10^4$")
     a1.axhline(0, color=GRID, lw=1)
-    a1.set_xlabel(r"$\mathrm{Var}_w(\ln\theta_*)\ \ [10^{-5}]$")
-    a1.set_ylabel(r"$\Delta\hat H_0=\hat H_0-\bar H_0$  [km s$^{-1}$Mpc$^{-1}$]")
-    a1.set_title("El sesgo en $H_0$ lo fija la varianza de $\\ln\\theta_*$ entre regiones", fontsize=10.5)
+    a1.set_xlabel(r"$\mathrm{Var}_w(\ln\theta_*)\ \ [\times10^{-5}]$")
+    a1.set_ylabel(r"$\Delta\hat H_0$  [km s$^{-1}$Mpc$^{-1}$]")
+    a1.set_title(r"$\Delta\hat H_0$ vs varianza de $\ln\theta_*$ entre hemisferios", fontsize=10.5)
     a1.grid(color=GRID, lw=0.5)
-    a1.legend(fontsize=8, frameon=False, loc="lower left")
+    a1.legend(fontsize=8.5, frameon=True, loc="lower left",
+              title=r"$\Delta\hat H_0 = k\,\mathrm{Var}_w$", title_fontsize=8.5)
 
-    S = sorted([r for r in R if abs(r["dH0"]) > min_abs], key=lambda r: (PARAM_NAMES.index(r["name"]), r["south"]))
+    S = sorted(R, key=lambda r: (PARAM_NAMES.index(r["name"]), r["south"]))
     y = np.arange(len(S))[::-1]
     geo = np.array([r["geo"] for r in S]); th = np.array([r["th"] for r in S])
-    a2.barh(y, geo, color="#9fb7d8", height=0.62, label=r"geométrica: $(-g_b\Delta\hat\omega_b-g_c\Delta\hat\omega_c)/g_H$")
+    a2.barh(y, geo, color="#9fb7d8", height=0.62,
+            label=r"geométrica: $(-g_b\Delta\hat\omega_b-g_c\Delta\hat\omega_c)/g_H$")
     a2.barh(y, th, left=np.where(np.sign(th) == np.sign(geo), geo, 0), color="#e5a36d", height=0.62,
             label=r"en $\theta_*$: $\Delta\ln\hat\theta_*/g_H$")
     a2.plot([r["dH0"] for r in S], y, "k|", ms=14, mew=2, label=r"$\Delta\hat H_0$ medido")
@@ -184,22 +194,23 @@ def fig_budget(R, g, outpath, title, min_abs=0.05):
     for t, r in zip(a2.get_yticklabels(), S):
         t.set_color(COLORS[r["name"]])
     for yi, r in zip(y, S):
-        frac = r["geo"] / r["dH0"] if r["dH0"] else np.nan
-        a2.text(min(r["dH0"], r["geo"] + min(r["th"], 0)) - 0.03, yi, f"{100 * frac:.0f}% geo",
-                ha="right", va="center", fontsize=8, color=MUTED)
+        if abs(r["dH0"]) > label_min:                 # el % sólo tiene sentido si hay sesgo
+            a2.text(min(r["dH0"], r["geo"] + min(r["th"], 0)) - 0.03, yi,
+                    f"{100 * r['geo'] / r['dH0']:.0f}% geo", ha="right", va="center", fontsize=8, color=MUTED)
     a2.axvline(0, color=INK, lw=0.8)
     a2.set_xlabel(r"contribución a $\Delta\hat H_0$  [km s$^{-1}$Mpc$^{-1}$]")
-    a2.set_title(rf"Presupuesto ($|\Delta\hat H_0|>{min_abs}$):  $g_H$={g[0]:.5f}, $g_b$={g[1]:+.3f}, $g_c$={g[2]:+.3f}",
+    a2.set_title(r"Descomposición: $\Delta\hat H_0=[\Delta\ln\hat\theta_*-g_b\Delta\hat\omega_b-g_c\Delta\hat\omega_c]/g_H$",
                  fontsize=10.5)
-    a2.legend(fontsize=8, frameon=False, loc="lower left")
-    xmin = min(min(r["dH0"], r["geo"] + min(r["th"], 0)) for r in S) if S else -1
-    a2.set_xlim(1.35 * xmin, 0.25 * abs(xmin))
+    a2.legend(fontsize=8, frameon=True, loc="lower left")
+    xmin = min(min(r["dH0"], r["geo"] + min(r["th"], 0)) for r in S)
+    a2.set_xlim(1.4 * xmin, 0.15 * abs(xmin))
     a2.grid(axis="x", color=GRID, lw=0.5)
 
-    fig.legend(handles=legend_handles(names), loc="lower center", ncol=len(names), frameon=False,
-               fontsize=9, bbox_to_anchor=(0.5, -0.03))
+    fig.legend(handles=legend_handles(names), loc="lower center", ncol=len(names), frameon=True,
+               fontsize=9, bbox_to_anchor=(0.5, -0.04), title="parámetro inyectado en el Sur",
+               title_fontsize=9)
     fig.suptitle(title, fontsize=11)
-    fig.tight_layout(rect=[0, 0.06, 1, 0.94])
+    fig.tight_layout(rect=[0, 0.09, 1, 0.94])
     fig.savefig(outpath, dpi=160, bbox_inches="tight"); plt.close(fig)
     print(f"[summary] saved {outpath}")
 
