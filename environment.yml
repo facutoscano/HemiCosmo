@@ -12,4 +12,5 @@ dependencies:
   - iminuit
   - corner
   - threadpoolctl     # pin sim workers to 1 BLAS/OpenMP thread each
+  - pytest            # tests/ (python -m pytest tests)
   - pip

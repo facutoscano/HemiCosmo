@@ -26,6 +26,11 @@ expected    : analytic ensemble-mean bandpowers, response matrices, region solve
 likelihood  : chi^2 factory + iminuit fit (Hartlap-corrected inverse covariance).
 analysis    : bias summaries, goodness-of-fit, formatted tables.
 plots       : optional diagnostic / corner / bias plots (corner is optional).
+configfile  : the single TOML configuration (configs/paper.toml) -> RunConfig / script defaults.
+acoustic    : theta_* = r_s/D_M, its inverse in H0 / omega_c, sensitivities, H0 split.
+fisher      : Fisher algebra of the blind fit (pure numpy; tests/test_fisher.py).
+prediction  : predictions of a configuration without simulations (CAMB + NaMaster glue).
+injections  : theta_*-preserving / theta_*-matched cosmologies and their JSON registry.
 """
 
 from .config import (

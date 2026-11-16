@@ -1,7 +1,7 @@
 """
-Theory Module:
--Estimating Cls using CAMB
--Estimating sigma8
+Theory module (CAMB):
+-Lensed TT spectrum of a Cosmology (optionally with a lensing amplitude A_L != 1)
+-sigma8 and its gradient in the fit basis
 """
 
 from __future__ import annotations
@@ -11,13 +11,16 @@ from .config import Cosmology, cosmo_from_fit
 
 def cosmology_to_cls(cosmo: Cosmology, lmax: int,
                      lens_potential_accuracy: int = 1,
-                     dl: bool = False) -> np.ndarray:
+                     dl: bool = False, Alens: float = 1.0) -> np.ndarray:
     """
-    Return the lensed TT spectrum (total) for 'cosmo', length lmax+1
+    Return the lensed TT spectrum (total) for 'cosmo', length lmax+1.
+    Alens scales the lensing potential power (A_L); 1 = standard (not touched).
     """
     pars = camb.CAMBparams()
     pars.set_cosmology(H0=cosmo.H0, ombh2=cosmo.ombh2, omch2=cosmo.omch2,
                        omk=0.0, tau=cosmo.tau)
+    if Alens != 1.0:
+        pars.Alens = float(Alens)
     pars.InitPower.set_params(As=cosmo.As, ns=cosmo.ns, r=0)
     pars.set_for_lmax(lmax, lens_potential_accuracy=lens_potential_accuracy)
     results = camb.get_results(pars)

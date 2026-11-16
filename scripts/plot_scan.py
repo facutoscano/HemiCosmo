@@ -70,7 +70,7 @@ def main(args):
     pidx = PARAM_TO_IDX[args.param]
     panel = PANEL_OF[pidx]
     sym = SYMB[args.param]
-    s_ = f"({sym})" if "^" in sym else sym        # A_s e^{-2tau} ya tiene superíndice
+    s_ = f"({sym})" if "^" in sym else sym        # A_s e^{-2tau} already has a superscript
     xlabel = rf"${s_}^{{\rm PR3}}-{s_}^{{\rm S}}$"
 
     runs = [r for r in load_runs(args.results_dir, args.cov_mode, args.indep_cov, args.phase_mode)

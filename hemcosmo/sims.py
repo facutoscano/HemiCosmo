@@ -290,6 +290,25 @@ def get_or_generate_region_sims(nsims: int, cosmos, cfg: RunConfig, mask: np.nda
     return all_Cb[:nsims]
 
 
+def load_cached_region_sims(nsims: int, cosmos, cfg: RunConfig,
+                            isotropic: bool = False) -> np.ndarray:
+    """
+    Load (NEVER generate) [nsims, nbin] cached bandpowers, verified against the run
+    metadata. Used by the Fisher predictions, which must not trigger 1.5 h of sims.
+    """
+    cosmos = list(cosmos)
+    path = sims_path_v2(cfg, cosmos, isotropic)
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"[sims] no cache {os.path.basename(path)} in {cfg.cache_dir}. Generate it with "
+            f"run_asymmetry.py / run_validation.py, or use the 'gaussian' covariance.")
+    all_Cb = _load(path, _meta(cfg, cosmos, isotropic))
+    if all_Cb.shape[0] < nsims:
+        raise FileNotFoundError(f"[sims] {os.path.basename(path)} has {all_Cb.shape[0]} sims, "
+                                f"{nsims} needed")
+    return all_Cb[:nsims]
+
+
 def get_or_generate_sims(nsims: int, north: Cosmology, south: Cosmology,
                          cfg: RunConfig, mask: np.ndarray, wsp, binning,
                          verbose: bool = True) -> np.ndarray:

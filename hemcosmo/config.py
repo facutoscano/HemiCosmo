@@ -202,7 +202,9 @@ def _parse_custom(body: str) -> Cosmology:
 
 def get_cosmo(spec) -> Cosmology:
     """
-    Accepts: a Cosmology, a preset name, 'random[:seed]', 'custom:k=v,...', or a dict
+    Accepts: a Cosmology, a preset name, a theta_*-preset name from
+    configs/theta_presets.json ('<src>_thfix', '<src>_thmatch'), 'random[:seed]',
+    'custom:k=v,...', or a dict
     """
     if isinstance(spec, Cosmology):
         return spec
@@ -216,7 +218,12 @@ def get_cosmo(spec) -> Cosmology:
             return random_cosmology(seed)
         if spec.startswith("custom:"):
             return _parse_custom(spec.split(":", 1)[1])
+        from .injections import registry_cosmology, registry_names   # lazy: avoids a cycle
+        c = registry_cosmology(spec)
+        if c is not None:
+            return c
         raise KeyError(f"Unknown cosmology spec '{spec}'. Presets: {list(PRESETS)}, "
+                       f"theta_* presets: {registry_names()} (configs/theta_presets.json), "
                        f"or 'random:<seed>', or 'custom:H0=..,ns=..'")
     if isinstance(spec, dict):
         d = dict(spec)

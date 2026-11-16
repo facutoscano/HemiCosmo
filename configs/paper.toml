@@ -1,0 +1,103 @@
+# =====================================================================================
+# HemiCosmo — single configuration file
+# =====================================================================================
+# Every script accepts   --config configs/paper.toml
+# Precedence:  command-line flag  >  this file  >  built-in default.
+# So you can keep this file as the paper baseline and override one thing at a time:
+#     python scripts/run_asymmetry.py --config configs/paper.toml --south 62H0
+#
+# Units: angles in degrees, H0 in km/s/Mpc, omega_x = Omega_x h^2.
+# Cosmology specs (regions, scans) can be:
+#     a preset name             "74H0", "1110omc", ...           (hemcosmo/config.py)
+#     a theta_*-preset name     "1110omc_thfix", "1110omc_thmatch" (configs/theta_presets.json)
+#     a custom spec             "custom:H0=70,ns=0.95,name=myname"
+#     a reproducible random     "random:7"
+# =====================================================================================
+
+[paths]
+# Folder with the Planck temperature products (only the common mask is read, and only
+# when geometry.mask = "common").
+data_dir    = "/home/ftoscano/Doctorado/Data/CMB/PLANCK/Temperature"
+common_mask = "Common_mask_Temperature_2048.fits"     # relative to data_dir
+# Relative paths below are relative to the project root.
+results_dir = "results"
+cache_dir   = "cache"
+
+[geometry]
+nside         = 1024
+delta_l       = 30          # bandpower width
+lmin          = 32
+# lmax_maps   = 2048        # workspace edge; default 2*nside
+# lmax_analysis = 1536      # last multipole used in the fit; default 1.5*nside
+apod_deg      = 1.0         # C2 apodization of the mask
+blend_deg     = 3.0         # tanh half-width of the region windows (the seams)
+beam_fwhm_deg = 0.0
+# mask = "naive"  : straight bands that hide the seams (paper baseline: H6 + V6)
+# mask = "common" : Planck common temperature mask (paths.common_mask)
+# mask = "none"   : full sky
+mask          = "naive"
+naive_mask_h  = 6.0         # |b| <= 6 deg removed (hides the N/S seam at b = 0)
+naive_mask_v  = 6.0         # great-circle band around the meridian l0 (quadrants)
+naive_l0_deg  = 0.0
+
+[sky]
+layout     = "hemi"         # "hemi" (N, S) or "quad" (NE, NW, SE, SW)
+phase_mode = "independent"  # "independent" (causally disconnected) or "shared"
+regions    = ["fiducial", "74H0"]   # one spec per region, in layout order
+
+[sims]
+nsims     = 1000            # per ensemble (mixed sky, null, isotropic)
+n_threads = 80              # parallel workers (capped at the logical CPUs)
+seed      = 1234            # changing it changes every cache file name/metadata
+cov_mode  = "isotropic"     # covariance of the blind analyst: "isotropic" or "stitched"
+indep_cov = true            # covariance from an independent set of nsims (out-of-sample)
+fit       = "minuit"        # "minuit" (nonlinear) or "linear" (damped Gauss-Newton)
+expected  = true            # analytic ensemble mean + response matrices in run_asymmetry
+
+[prediction]
+# Fisher / second-order predictions without simulations (scripts/run_prediction.py)
+covariance   = "sims"       # "sims": cached isotropic sims (same C as the runs; must exist)
+                            # "gaussian": analytic Knox covariance (no sims needed)
+mean_model   = "coupling"   # "coupling": exact ensemble mean (window coupling matrices)
+                            # "scalar"  : sum_k a_k D(p_k) (no extra workspaces)
+fit          = "linear"     # zero-noise fit of the predicted mean: "linear" or "minuit"
+extra_params = ["Alens"]    # extra fit parameters for the extended prediction ([] = none)
+theta_method = "hs96"       # theta_* backend: "hs96" (fast) or "camb"
+# Souths used by run_prediction.py --scan (North = regions[0])
+scan = ["62H0", "65H0", "68.5H0", "71H0", "74H0",
+        "092ns", "094ns", "096ns", "098ns", "100ns",
+        "215omb", "218omb", "224omb", "227omb",
+        "1110omc", "1150omc", "1178omc", "1234omc", "1262omc", "1302omc",
+        "200As", "204As", "208As", "212As", "216As"]
+
+[injections]
+# theta_*-preserving / theta_*-matched companions of a source preset
+# (scripts/make_theta_presets.py writes them to `registry`).
+#   <src>_thfix   : same omega_b, omega_c as <src>, H0 re-solved so that theta_* = theta_*(fiducial)
+#   <src>_thmatch : fiducial omega_b, omega_c, H0 chosen so that ln theta_* equals that of <src>
+sources  = ["1110omc", "1150omc", "1262omc", "1302omc", "215omb", "227omb"]
+method   = "hs96"           # theta_* backend used to solve for H0 ("hs96" or "camb")
+registry = "configs/theta_presets.json"
+
+[observational]
+# Disc-by-disc parameter fits (FG2021 / T2025 style) in the standard format described
+# in observational/README.md.  Empty string = not available yet.
+discfits      = ""
+out_dir       = "results/observational"
+disc_radius_deg = 30.0      # 60 deg diameter discs
+theta_method  = "hs96"
+# Multipoles of the parameter maps used in the low-L statistics
+lmax_stat     = 3
+remove_low    = [0]         # multipoles removed before the statistics; [0, 2] also drops L = 2
+# External templates (HEALPix maps at the disc-centre nside) to correlate with; optional.
+templates     = {}          # e.g. {fg_model3 = "data/fg_model3_ns4.fits"}
+# Aberration (positive control): Planck 2018 dipole
+beta          = 1.23357e-3
+dipole_l_deg  = 264.021
+dipole_b_deg  = 48.253
+# Conversion of a bound on Var_w(ln theta_*) into a bound on the H0 bias (paper law)
+k_H0          = -1.92e4     # Delta H0 = k * Var_w   (H0 source; -2.34e4 for omega_c source)
+# FG2021 Eq. (4) coefficients, as transcribed: dl_A/l_A ~ a_h dh/h + a_m dw_m/w_m.
+# VERIFY the signs against the published paper and Hu et al. (2001) Eqs. (A15)-(A17).
+fg_eq4_a_h    = 1.0
+fg_eq4_a_m    = 0.59

@@ -99,3 +99,33 @@
 - `1110omc`, `1302omc` (omch2 at ~ +-5 sigma); legacy aliases 68.5H0<-68H0, 200As<-2As for
   `--adopt_legacy_cache`.
 - `run_PRESETscan.sh`: all five parameters, isotropic covariance + `--indep_cov` + `--expected`.
+
+
+# Iteration 5 — predictions, theta_* injections, observational folder, single config
+
+## New
+- `configs/paper.toml` + `hemcosmo/configfile.py`: one validated TOML file for every script
+  (`--config`; command-line flags override it). `run_asymmetry.py` and `run_validation.py`
+  accept it; new flags `--mask_path --results_dir --cache_dir --seed`. Cache keys unchanged.
+- `hemcosmo/acoustic.py` (rewritten, English): `lntheta` ('hs96' or 'camb' backend), inverses
+  `H0_from_lntheta` / `omch2_from_lntheta`, `sensitivities`, `hessian3`, `curvature_HH`,
+  `sensitivity_breakdown` (T_rs, T_DM, T_R, T_z*), `h0_split_linear` / `h0_split_exact`,
+  `weighted_lntheta_variance`. Same numbers as before (g_H = 0.00288, g_b = -2.404, g_c = 1.005).
+- `hemcosmo/fisher.py`: Fisher algebra of the blind fit (estimator, one-step bias, Taylor
+  1/2 M(H:S), hemisphere coefficients, dilation model and kappa_dil, Q1/Q2 noncentralities,
+  delta_nu, power, patch test, extensions). Pure numpy; unit-tested on a toy spectrum.
+- `hemcosmo/prediction.py` + `scripts/run_prediction.py` + `scripts/plot_prediction.py`:
+  predictions of a config without simulations, and comparison with the simulated scan.
+- `hemcosmo/injections.py` + `scripts/make_theta_presets.py` + `configs/theta_presets.json`
+  + `scripts/run_injections.sh`: <src>_thfix (Var_w = 0) and <src>_thmatch (pure dilation);
+  `config.get_cosmo` resolves their names from the registry.
+- `theory.cosmology_to_cls(..., Alens=1.0)`: optional lensing amplitude (default unchanged).
+- `sims.load_cached_region_sims`: load-only access to the caches (never generates).
+- `observational/`: disc-fit format, theta_* maps with the exact H0 split, null statistics,
+  Var_w bound, aberration control, FG2021 Eq. (4) check (`run_check_eq4.py`, `run_theta_maps.py`).
+- `paper/hemicosmo_draft.tex`: draft of the formalism.
+- `tests/`: pytest suite that runs without CAMB/NaMaster (stubs + toy spectrum).
+
+## Changed
+- All user-facing text in English (run_validation, plot_summary, plot_scan, tidy_results).
+- `tidy_results.py` keeps `results/prediction/`, `results/observational/`, `results/logs/`.

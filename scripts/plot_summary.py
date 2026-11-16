@@ -1,18 +1,19 @@
 #!/usr/bin/env python
 """
-Figuras-resumen del scan (todas las corridas de una vez), para las slides.
+Summary figures of the scan (all runs at once), for the slides and the paper.
 
   summary_detectability_<tag>.png
-     (a) Q1 (vs fiducial) potencia vs corrimiento inyectado [σ por cielo del parámetro inyectado]
-     (b) Q2 (vs su propio ajuste ΛCDM) potencia vs corrimiento inyectado
-     (c) Q2: potencia de las sims vs predicha, con y sin el término de varianza δν
-         (covarianza fiducial ≠ covarianza del cielo mezclado)
+     (a) Q1 (vs fiducial): power vs injected shift [1-sky sigma of the injected parameter]
+     (b) Q2 (vs its own LCDM fit): power vs injected shift
+     (c) Q2: power in the sims vs predicted, with and without the variance term delta_nu
+         (fiducial covariance != covariance of the mixed sky)
   summary_H0budget_<tag>.png
-     (a) ΔĤ0 (pareado con el null cosido) vs Var_w(ln θ*) para todas las corridas (ley ΔĤ0 ≈ −2×10⁴ Var_w)
-     (b) presupuesto de ΔĤ0 por corrida: transferencia geométrica (ω_b, ω_c) + parte en θ*
-         ΔĤ0 = [Δlnθ̂* − g_b Δω̂_b − g_c Δω̂_c]/g_H
+     (a) Delta H0 (paired with the stitched null) vs Var_w(ln theta_*) for all runs
+         (law Delta H0 ~ -2e4 Var_w)
+     (b) Delta H0 budget per run: geometric transfer (omega_b, omega_c) + theta_* part
+         Delta H0 = [Delta ln theta_hat - g_b Delta omega_b - g_c Delta omega_c] / g_H
 
-Uso:
+Usage:
   python scripts/plot_summary.py --cov_mode isotropic --indep_cov [--mask maskH6_maskV6l00]
 """
 import os
@@ -60,18 +61,18 @@ def collect(runs):
         var_w = float(w @ (lth - w @ lth) ** 2)
         fit = np.asarray(d["fit_values"], float)
         base = np.asarray(d["null_fit_values"], float)
-        # Diferencias PAREADAS con el null cosido (mismas semillas en todas las corridas): se resta
-        # el ruido MC común y el déficit eps.  Δp = (p̂ - p̂_null) - (p̄ - p_fid)
+        # PAIRED differences with the stitched null (same seeds in every run): removes the
+        # common MC noise and the deficit eps.  Δp = (p̂ - p̂_null) - (p̄ - p_fid)
         dp = (fit - base) - (pbar - fid)
         dlnth = (lt(fit) - lt(base)) - (lt(pbar) - lt(fid))
         sig = float(r["sig_null6"][{0: 0, 1: 1, 2: 2, 3: 3, 4: 5}[inj]])
         nb = len(d["ells"])
         nu = nb - 5
         nsims = int(d["nsims"])
-        lam2 = max(float(d["sys_chi2"]) - nu / nsims, 1e-3)              # quita el piso MC ν/N
-        # Q2 con covarianza fiducial: además de λ₂ (media), la varianza del cielo mezclado difiere
-        # de la de C:  ⟨χ²⟩ = tr[C⁻¹P⊥C_mix P⊥ᵀ] + λ₂.  Con C_mix ≈ S C S, S = diag(D_mix/D_fid):
-        # δν ≈ (ν/n_b)·2·Σ_b s_b  (exacto para un cambio de amplitud) -> χ² escala (1+δν/ν).
+        lam2 = max(float(d["sys_chi2"]) - nu / nsims, 1e-3)              # removes the MC floor ν/N
+        # Q2 with the fiducial covariance: besides λ₂ (mean), the variance of the mixed sky differs
+        # from C:  ⟨χ²⟩ = tr[C⁻¹P⊥C_mix P⊥ᵀ] + λ₂.  With C_mix ≈ S C S, S = diag(D_mix/D_fid):
+        # δν ≈ (ν/n_b)·2·Σ_b s_b  (exact for an amplitude change) -> χ² scales as (1+δν/ν).
         s_b = np.asarray(d["mean_asym"], float) / np.asarray(d["Dl_fid"], float) - 1.0
         dnu_pred = nu / nb * 2.0 * float(s_b.sum())
         g_null, g_asym = np.asarray(d["chi2_gof_null"], float), np.asarray(d["chi2_gof_asym"], float)
@@ -101,10 +102,10 @@ def legend_handles(names):
 def fig_detectability(R, outpath, title):
     names = [n for n in PARAM_NAMES if any(r["name"] == n for r in R)]
     N = R[0]["n"]
-    band = 2 * np.sqrt(ALPHA * (1 - ALPHA) / N)            # ±2σ binomial del null
+    band = 2 * np.sqrt(ALPHA * (1 - ALPHA) / N)            # ±2σ binomial band of the null
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.6))
-    specs = ((axes[0], "p1", "Q1: ¿el cielo mezclado pasa como el fiducial?"),
-             (axes[1], "p2", "Q2: ¿pasa como un único ΛCDM?"))
+    specs = ((axes[0], "p1", "Q1: does the mixed sky pass as the fiducial?"),
+             (axes[1], "p2", "Q2: does it pass as a single ΛCDM?"))
     for ax, key, ttl in specs:
         ax.axhspan(1 - ALPHA - band, 1 - ALPHA + band, color=GRID, alpha=0.9, lw=0)
         ax.axhline(1 - ALPHA, color=MUTED, lw=0.8)
@@ -116,18 +117,18 @@ def fig_detectability(R, outpath, title):
             ax.errorbar(x, [1 - r[key] for r in rr], yerr=[binom_err(r[key], r["n"]) for r in rr],
                         fmt="o", color=COLORS[n], ms=5, capsize=2, lw=1)
         ax.axvline(0, color=GRID, lw=1)
-        ax.set_xlabel(r"corrimiento inyectado en el Sur $\Delta_i/\sigma_i$  ($\sigma$ por cielo)")
-        ax.set_ylabel("fracción de cielos que pasan el test")
+        ax.set_xlabel(r"shift injected in the South $\Delta_i/\sigma_i$  (1-sky $\sigma$)")
+        ax.set_ylabel("fraction of skies that pass the test")
         ax.set_title(ttl, fontsize=10.5)
         ax.grid(color=GRID, lw=0.5)
     axes[0].set_ylim(-0.03, 1.03)
     lo2 = min(1 - r["p2"] - binom_err(r["p2"], r["n"]) for r in R)
     axes[1].set_ylim(min(0.85, lo2 - 0.01), 1.0)
-    h_common = [plt.Rectangle((0, 0), 1, 1, color=GRID, label=r"cielos $\Lambda$CDM verdaderos (0.95 $\pm2\sigma$)"),
+    h_common = [plt.Rectangle((0, 0), 1, 1, color=GRID, label=r"true $\Lambda$CDM skies (0.95 $\pm2\sigma$)"),
                 Line2D([], [], marker="o", ls="", color=INK, label="sims"),
-                Line2D([], [], ls="-", color=INK, label="predicción")]
+                Line2D([], [], ls="-", color=INK, label="prediction")]
     axes[0].legend(handles=h_common, fontsize=8, loc="center right", frameon=True)
-    h_q2 = h_common[:2] + [Line2D([], [], ls="-", color=INK, label=r"predicción ($\lambda_2+\delta\nu$)")]
+    h_q2 = h_common[:2] + [Line2D([], [], ls="-", color=INK, label=r"prediction ($\lambda_2+\delta\nu$)")]
     axes[1].legend(handles=h_q2, fontsize=8, loc="lower right", frameon=True)
 
     ax = axes[2]
@@ -141,15 +142,15 @@ def fig_detectability(R, outpath, title):
     ax.axhline(ALPHA, color=MUTED, ls=":", lw=1); ax.axvline(ALPHA, color=MUTED, ls=":", lw=1)
     ax.set_xlim(lo, hi); ax.set_ylim(lo, hi)
     ax.set_xlabel("potencia Q2 predicha"); ax.set_ylabel("potencia Q2 (sims)")
-    ax.set_title("Q2: predicción vs sims", fontsize=10.5)
-    ax.legend(handles=[Line2D([], [], marker="o", ls="", color=INK, label=r"predicción $\lambda_2+\delta\nu$"),
-                       Line2D([], [], marker="o", ls="", mfc="none", mec=INK, label=r"predicción sólo $\lambda_2$"),
+    ax.set_title("Q2: prediction vs sims", fontsize=10.5)
+    ax.legend(handles=[Line2D([], [], marker="o", ls="", color=INK, label=r"prediction $\lambda_2+\delta\nu$"),
+                       Line2D([], [], marker="o", ls="", mfc="none", mec=INK, label=r"prediction, $\lambda_2$ only"),
                        Line2D([], [], ls="-", color=INK, label="1:1")],
               fontsize=8, loc="upper left", frameon=True)
     ax.grid(color=GRID, lw=0.5)
 
     fig.legend(handles=legend_handles(names), loc="lower center", ncol=len(names), frameon=True,
-               fontsize=9, bbox_to_anchor=(0.5, -0.04), title="parámetro inyectado en el Sur",
+               fontsize=9, bbox_to_anchor=(0.5, -0.04), title="parameter injected in the South",
                title_fontsize=9)
     fig.suptitle(title, fontsize=11)
     fig.tight_layout(rect=[0, 0.09, 1, 0.94])
@@ -171,13 +172,13 @@ def fig_budget(R, g, outpath, title, keep=("H0", "ombh2", "omch2"), label_min=0.
     for n in ("H0", "omch2"):
         m = np.array([r["name"] == n for r in R]) & (X > 0)
         if m.sum() >= 2:
-            k = float((X[m] * Y[m]).sum() / (X[m] ** 2).sum())        # pendiente por el origen
+            k = float((X[m] * Y[m]).sum() / (X[m] ** 2).sum())        # slope through the origin
             a1.plot(xx, k * xx, color=COLORS[n], lw=1.2, alpha=0.8,
-                    label=rf"pendiente ajustada ({lab[n]}): ${k * 1e5 / 1e4:+.2f}\times10^4$")
+                    label=rf"fitted slope ({lab[n]}): ${k * 1e5 / 1e4:+.2f}\times10^4$")
     a1.axhline(0, color=GRID, lw=1)
     a1.set_xlabel(r"$\mathrm{Var}_w(\ln\theta_*)\ \ [\times10^{-5}]$")
     a1.set_ylabel(r"$\Delta\hat H_0$  [km s$^{-1}$Mpc$^{-1}$]")
-    a1.set_title(r"$\Delta\hat H_0$ vs varianza de $\ln\theta_*$ entre hemisferios", fontsize=10.5)
+    a1.set_title(r"$\Delta\hat H_0$ vs variance of $\ln\theta_*$ between hemispheres", fontsize=10.5)
     a1.grid(color=GRID, lw=0.5)
     a1.legend(fontsize=8.5, frameon=True, loc="lower left",
               title=r"$\Delta\hat H_0 = k\,\mathrm{Var}_w$", title_fontsize=8.5)
@@ -186,20 +187,20 @@ def fig_budget(R, g, outpath, title, keep=("H0", "ombh2", "omch2"), label_min=0.
     y = np.arange(len(S))[::-1]
     geo = np.array([r["geo"] for r in S]); th = np.array([r["th"] for r in S])
     a2.barh(y, geo, color="#9fb7d8", height=0.62,
-            label=r"geométrica: $(-g_b\Delta\hat\omega_b-g_c\Delta\hat\omega_c)/g_H$")
+            label=r"geometric: $(-g_b\Delta\hat\omega_b-g_c\Delta\hat\omega_c)/g_H$")
     a2.barh(y, th, left=np.where(np.sign(th) == np.sign(geo), geo, 0), color="#e5a36d", height=0.62,
-            label=r"en $\theta_*$: $\Delta\ln\hat\theta_*/g_H$")
-    a2.plot([r["dH0"] for r in S], y, "k|", ms=14, mew=2, label=r"$\Delta\hat H_0$ medido")
+            label=r"in $\theta_*$: $\Delta\ln\hat\theta_*/g_H$")
+    a2.plot([r["dH0"] for r in S], y, "k|", ms=14, mew=2, label=r"measured $\Delta\hat H_0$")
     a2.set_yticks(y); a2.set_yticklabels([r["south"] for r in S], fontsize=9)
     for t, r in zip(a2.get_yticklabels(), S):
         t.set_color(COLORS[r["name"]])
     for yi, r in zip(y, S):
-        if abs(r["dH0"]) > label_min:                 # el % sólo tiene sentido si hay sesgo
+        if abs(r["dH0"]) > label_min:                 # the % only makes sense if there is a bias
             a2.text(min(r["dH0"], r["geo"] + min(r["th"], 0)) - 0.03, yi,
                     f"{100 * r['geo'] / r['dH0']:.0f}% geo", ha="right", va="center", fontsize=8, color=MUTED)
     a2.axvline(0, color=INK, lw=0.8)
-    a2.set_xlabel(r"contribución a $\Delta\hat H_0$  [km s$^{-1}$Mpc$^{-1}$]")
-    a2.set_title(r"Descomposición: $\Delta\hat H_0=[\Delta\ln\hat\theta_*-g_b\Delta\hat\omega_b-g_c\Delta\hat\omega_c]/g_H$",
+    a2.set_xlabel(r"contribution to $\Delta\hat H_0$  [km s$^{-1}$Mpc$^{-1}$]")
+    a2.set_title(r"Decomposition: $\Delta\hat H_0=[\Delta\ln\hat\theta_*-g_b\Delta\hat\omega_b-g_c\Delta\hat\omega_c]/g_H$",
                  fontsize=10.5)
     a2.legend(fontsize=8, frameon=True, loc="lower left")
     xmin = min(min(r["dH0"], r["geo"] + min(r["th"], 0)) for r in S)
@@ -207,7 +208,7 @@ def fig_budget(R, g, outpath, title, keep=("H0", "ombh2", "omch2"), label_min=0.
     a2.grid(axis="x", color=GRID, lw=0.5)
 
     fig.legend(handles=legend_handles(names), loc="lower center", ncol=len(names), frameon=True,
-               fontsize=9, bbox_to_anchor=(0.5, -0.04), title="parámetro inyectado en el Sur",
+               fontsize=9, bbox_to_anchor=(0.5, -0.04), title="parameter injected in the South",
                title_fontsize=9)
     fig.suptitle(title, fontsize=11)
     fig.tight_layout(rect=[0, 0.09, 1, 0.94])
@@ -219,15 +220,15 @@ def main(a):
     runs = load_runs(a.results_dir, a.cov_mode, a.indep_cov, a.phase_mode)
     masks = sorted({r["mask"] for r in runs})
     if not runs:
-        raise SystemExit("no hay corridas con esas opciones (¿--cov_mode isotropic --indep_cov?)")
+        raise SystemExit("no runs with these options (--cov_mode isotropic --indep_cov?)")
     mask = a.mask or (masks[0] if len(masks) == 1 else None)
     if mask is None:
-        raise SystemExit(f"varias máscaras {masks}: elegí una con --mask")
+        raise SystemExit(f"several masks {masks}: choose one with --mask")
     runs = [r for r in runs if r["mask"] == mask]
     R, g = collect(runs)
     tag = f"{mask}_{a.cov_mode}" + ("_indepcov" if a.indep_cov else "")
     N = R[0]["n"]
-    print(f"[summary] {len(R)} corridas  máscara={mask}  N={N}")
+    print(f"[summary] {len(R)} runs  mask={mask}  N={N}")
     print(f"  {'south':>10} {'x[σ]':>7} {'Q1':>6} {'Q1p':>6} {'Q2':>6} {'Q2p':>6} {'Q2p+δν':>7} {'λ2':>7} "
           f"{'δν_emp':>7} {'δν_pred':>7} {'Var_w·1e5':>9} {'ΔH0':>7} {'geo':>7} {'θ*':>7}")
     for r in sorted(R, key=lambda r: (PARAM_NAMES.index(r["name"]), r["x"])):
@@ -236,9 +237,9 @@ def main(a):
               f"{r['dnu_pred']:>+7.2f} {r['var_w'] * 1e5:>9.3f} {r['dH0']:>+7.3f} "
               f"{r['geo']:>+7.3f} {r['th']:>+7.3f}")
     fig_detectability(R, os.path.join(a.outdir, f"summary_detectability_{tag}.png"),
-                      f"Detectabilidad de la mezcla N/S ({mask}, N={N} cielos)")
+                      f"Detectability of the N/S mixing ({mask}, N={N} skies)")
     fig_budget(R, g, os.path.join(a.outdir, f"summary_H0budget_{tag}.png"),
-               f"Sesgo de segundo orden en $H_0$ ({mask})")
+               f"Second-order bias of $H_0$ ({mask})")
 
 
 if __name__ == "__main__":

@@ -20,7 +20,9 @@ Covariance / null ensemble (--cov_mode):
 --expected : analytic ensemble mean (coupling matrices), checked against the sims;
              response matrices R_k, efficiency eta, cross-responses, a_k(l).
 
-Run with:
+Run with the paper configuration (every flag below can still override the file):
+python scripts/run_asymmetry.py --config configs/paper.toml --south 62H0
+or fully by hand:
 python scripts/run_asymmetry.py --north fiducial --south 74H0 --nside 1024 --delta_l 30 --lmin 32 --apod 1. --blend 3. --nsims 1000 --n_threads 30 --phase_mode independent --minuit --naive_mask_h 6
 python scripts/run_asymmetry.py --layout quad --regions fiducial 74H0 fiducial fiducial --naive_mask_h 6 --naive_mask_v 6 --nside 1024 --blend 3. --apod 1. --nsims 1000 --phase_mode independent --minuit --expected --compare_cov
 """
@@ -49,6 +51,7 @@ from hemcosmo.analysis import (bias_summary_regions, hypothesis_test, frequentis
                                mean_consistency)
 from hemcosmo import plots
 from hemcosmo.logutil import tee_output
+from hemcosmo.configfile import parse_with_config, add_path_arguments, runconfig_kwargs_from_args
 
 
 #%% Helpers
@@ -60,7 +63,8 @@ def build_config(args) -> RunConfig:
                      phase_mode=args.phase_mode, layout=args.layout,
                      adopt_legacy_cache=args.adopt_legacy_cache,
                      nomask=args.nomask, naive_mask_v=args.naive_mask_v,
-                     naive_mask_h=args.naive_mask_h, naive_l0_deg=args.naive_l0)
+                     naive_mask_h=args.naive_mask_h, naive_l0_deg=args.naive_l0,
+                     **runconfig_kwargs_from_args(args))
 
 
 def resolve_regions(args, cfg):
@@ -459,4 +463,5 @@ if __name__ == "__main__":
     p.add_argument("--naive_mask_h", type=float, default=None)
     p.add_argument("--naive_mask_v", type=float, default=None)
     p.add_argument("--naive_l0", type=float, default=0.0)
-    main(p.parse_args())
+    add_path_arguments(p)
+    main(parse_with_config(p))
