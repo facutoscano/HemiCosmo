@@ -151,9 +151,9 @@ PRESETS = {
     "208As": replace(FIDUCIAL, As=2.08e-9, name="208As"),
     "212As": replace(FIDUCIAL, As=2.12e-9, name="212As"),
     "216As": replace(FIDUCIAL, As=2.16e-9, name="216As"),
-    "H1": Cosmology(H0=76.6, ombh2=0.025, omch2=0.102, ns=1.009, As=1.97e-9, tau=0.0522),
-    "H2": Cosmology(H0=61.3, ombh2=0.021, omch2=0.134, ns=0.921, As=2.17e-9, tau=0.0522),
-    "H3": Cosmology(H0=75.8, ombh2=0.023, omch2=0.104, ns=0.980, As=2.00e-9, tau=0.0522)
+    "H1": Cosmology(H0=76.6, ombh2=0.025, omch2=0.102, ns=1.009, As=1.97e-9, tau=0.0522, name="H1"),
+    "H2": Cosmology(H0=61.3, ombh2=0.021, omch2=0.134, ns=0.921, As=2.17e-9, tau=0.0522, name="H2"),
+    "H3": Cosmology(H0=75.8, ombh2=0.023, omch2=0.104, ns=0.980, As=2.00e-9, tau=0.0522, name="H3")
 }
 
 # v2 name -> v1 name of presets that were renamed (only used to adopt v1 sim caches)
