@@ -12,6 +12,7 @@ import numpy as np
 import healpy as hp
 import pymaster as nmt
 from .config import RunConfig
+from .discs import lb_to_vec, disc_partition          # noqa: F401  (pure numpy)
 
 
 def load_common_mask(cfg: RunConfig, verbose: bool = True) -> np.ndarray:
@@ -177,6 +178,16 @@ def quadrant_windows(cfg: RunConfig, l0_deg=0.0) -> dict:
     return {"NE": Wn * We, "NW": Wn * Ww, "SE": Ws * We, "SW": Ws * Ww}
 
 
+def disc_windows(cfg: RunConfig) -> dict:
+    """
+    {'R': rest of the sky, <label_k>: disc k} for layout 'discs'
+    """
+    npix = hp.nside2npix(cfg.nside)
+    vecs = np.array(hp.pix2vec(cfg.nside, np.arange(npix))).T
+    Ws = disc_partition(vecs, cfg.disc_centers, cfg.disc_radii_deg, cfg.blend_width_deg)
+    return dict(zip(cfg.labels, Ws))
+
+
 def south_weight_from_cfg(cfg: RunConfig) -> float:
     """
     a_S of 2 regions with the real mask 
@@ -198,12 +209,14 @@ def region_weights_shared(mask, windows) -> np.ndarray:
 def layout_windows(cfg: RunConfig) -> dict:
     """
     Partition-of-unity windows for cfg.layout, as an ordered dict {label: W}.
-    Order == config.LAYOUTS[cfg.layout] (the order used by the CLI and the seeds).
+    Order == cfg.labels (the order used by the CLI and the seeds).
     """
     if cfg.layout == "hemi":
         w = hemisphere_windows(cfg)
     elif cfg.layout == "quad":
         w = quadrant_windows(cfg, cfg.naive_l0_deg)
+    elif cfg.layout == "discs":
+        w = disc_windows(cfg)
     else:
         raise ValueError(f"unknown layout {cfg.layout}")
     labels = cfg.labels

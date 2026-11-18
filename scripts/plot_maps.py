@@ -11,6 +11,8 @@ Run with:
     python scripts/plot_maps.py --north fiducial --south 74H0 --nside 1024 
     python scripts/plot_maps.py --north fiducial --south 62H0 --nside 1024 --nomask
     python scripts/plot_maps.py --layout quad --regions fiducial 74H0 092ns fiducial --naive_mask_h 6 --naive_mask_v 6 --nside 1024
+    python scripts/plot_maps.py --config configs/discs.toml          # FG horizons as discs
+Also saves the region windows W_k (Windows_<tag>.png): check the layout before any run.
 """
 import os
 import sys
@@ -29,6 +31,8 @@ from hemcosmo.masks import (load_common_mask, galactic_hemisphere_weight,
                             quadrant_windows, layout_windows, layout_weights,
                             region_weights)
 from hemcosmo.sims import composite_map, _make_seeds, _unique_cls
+from hemcosmo.configfile import (parse_with_config, add_path_arguments, runconfig_kwargs_from_args,
+                                 add_disc_arguments, disc_kwargs_from_args)
 
 
 def build_config(args) -> RunConfig:
@@ -37,7 +41,8 @@ def build_config(args) -> RunConfig:
                      apod_deg=args.apod, blend_width_deg=args.blend,
                      beam_fwhm_deg=args.beam, phase_mode=args.phase_mode, nomask=args.nomask, seed=args.seed,
                      naive_mask_h=args.naive_mask_h, naive_mask_v=args.naive_mask_v,
-                     naive_l0_deg=args.naive_l0, layout=args.layout)
+                     naive_l0_deg=args.naive_l0, layout=args.layout,
+                     **disc_kwargs_from_args(args), **runconfig_kwargs_from_args(args))
 
 def mask_tag(cfg: RunConfig) -> str:
     if cfg.naive_mask_h is not None or cfg.naive_mask_v is not None:
@@ -76,9 +81,31 @@ def one_composite(cl_n, cl_s, cfg, Wn, Ws, mask, seed_n, seed_s):
         comp = hp.smoothing(comp, fwhm=np.radians(cfg.beam_fwhm_deg))
     return subtract_monopole(comp, mask)
 
+def plot_windows(cfg, windows, labels, mask, path):
+    """
+    Region map (argmax_k W_k), the blend zones (1 - sum W_k^2: where the stitching
+    deficit comes from) and the mask
+    """
+    W = np.array(windows)
+    region = np.argmax(W, axis=0).astype(float)
+    seam = 1.0 - np.sum(W ** 2, axis=0)
+    fig = plt.figure(figsize=(15, 4))
+    hp.mollview(region, sub=(1, 3, 1), title="regions: " + ", ".join(
+        f"{i}={l}" for i, l in enumerate(labels)), cmap="tab10", min=-0.5, max=9.5, cbar=False)
+    hp.graticule(dpar=30, dmer=30, alpha=0.3)
+    disp = seam.copy()
+    hp.mollview(disp, sub=(1, 3, 2), title=r"$1-\sum_k W_k^2$ (stitching deficit)", cmap="magma")
+    hp.graticule(dpar=30, dmer=30, alpha=0.3)
+    hp.mollview(mask, sub=(1, 3, 3), title="mask", cmap="gray", min=0, max=1)
+    hp.graticule(dpar=30, dmer=30, alpha=0.3)
+    fig.savefig(path, bbox_inches="tight", dpi=110)
+    plt.close(fig)
+    print(f"[maps] saved {path}")
+
+
 def main(args):
     cfg = build_config(args)
-    labels = list(LAYOUTS[cfg.layout])
+    labels = list(cfg.labels)
     if args.regions:
         specs = args.regions
     elif cfg.layout == "hemi":
@@ -99,6 +126,7 @@ def main(args):
         report_weights(cfg, mask, args.quadrants or (cfg.naive_mask_v is not None))
 
     windows = list(layout_windows(cfg).values())
+    plot_windows(cfg, windows, labels, mask, os.path.join(outdir, f"Windows_{tag}_{mtag}.png"))
     ucls, cl_ids = _unique_cls(cosmos, cfg)
     seeds = _make_seeds(cfg, 6, offset=0, K=len(labels))   # = the first 6 sims of the run
 
@@ -153,5 +181,6 @@ if __name__ == "__main__":
     p.add_argument("--naive_l0", type=float, default=0.0, help="longitude of the vertical band/meridian")
     p.add_argument("--quadrants", action="store_true",
                    help="report the 4-quadrant weights even without a vertical mask")
-    p.add_argument("--seed", type=int, default=1234, help="same default as RunConfig -> shows the run's first 6 sims")
-    main(p.parse_args())
+    add_disc_arguments(p)
+    add_path_arguments(p)          # --seed (same default as RunConfig) and paths
+    main(parse_with_config(p))

@@ -41,7 +41,8 @@ naive_mask_v  = 6.0         # great-circle band around the meridian l0 (quadrant
 naive_l0_deg  = 0.0
 
 [sky]
-layout     = "hemi"         # "hemi" (N, S) or "quad" (NE, NW, SE, SW)
+layout     = "hemi"         # "hemi" (N, S), "quad" (NE, NW, SE, SW) or "discs"
+                            # (R + one region per disc: see configs/discs.toml)
 phase_mode = "independent"  # "independent" (causally disconnected) or "shared"
 regions    = ["fiducial", "74H0"]   # one spec per region, in layout order
 
@@ -63,6 +64,16 @@ mean_model   = "coupling"   # "coupling": exact ensemble mean (window coupling m
 fit          = "linear"     # zero-noise fit of the predicted mean: "linear" or "minuit"
 extra_params = ["Alens"]    # extra fit parameters for the extended prediction ([] = none)
 theta_method = "hs96"       # theta_* backend: "hs96" (fast) or "camb"
+# Data vector. TT + "namaster" = the pseudo-C_l of the simulations (default).
+# Any TE/EE implies binning = "theory": binned sky spectra, Gaussian multi-spectrum
+# covariance (f_sky,eff of the mask) and the scalar mixture sum_k a_k D(p_k).
+spectra      = ["TT"]       # e.g. ["TT", "TE", "EE"]; CLI: --spectra TT TE EE
+binning      = "namaster"   # "namaster" or "theory" (run TT in "theory" too, as reference)
+noise        = "none"       # theory mode: "none" (cosmic variance), "planck", or "custom":
+# noise_T    = 33.0         #   muK arcmin (temperature)
+# noise_P    = 46.7         #   muK arcmin (polarization; default sqrt(2) noise_T)
+# noise_fwhm = 7.3          #   beam FWHM in arcmin (the noise is beam-deconvolved)
+# lmax_pol   = 1536         # last multipole of TE/EE (default lmax_analysis)
 # Souths used by run_prediction.py --scan (North = regions[0])
 scan = ["62H0", "65H0", "68.5H0", "71H0", "74H0",
         "092ns", "094ns", "096ns", "098ns", "100ns",
@@ -97,7 +108,7 @@ dipole_l_deg  = 264.021
 dipole_b_deg  = 48.253
 # Conversion of a bound on Var_w(ln theta_*) into a bound on the H0 bias (paper law)
 k_H0          = -1.92e4     # Delta H0 = k * Var_w   (H0 source; -2.34e4 for omega_c source)
-# FG2021 Eq. (4) coefficients, as transcribed: dl_A/l_A ~ a_h dh/h + a_m dw_m/w_m.
-# VERIFY the signs against the published paper and Hu et al. (2001) Eqs. (A15)-(A17).
+# FG2021 Eq. (4) coefficients: dl_A/l_A ~ a_h dh/h + a_m dw_m/w_m, w_m = w_b + w_c
+# (checked against FG2021 Sec. 3.6, which cites Hu et al. 2001 Eqs. A15-A17).
 fg_eq4_a_h    = 1.0
 fg_eq4_a_m    = 0.59

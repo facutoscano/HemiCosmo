@@ -36,7 +36,14 @@ RECORD_NAMES = ["H0", "ombh2", "omch2", "ns", "As", "tau"]
 LAYOUTS = {
     "hemi": ("N", "S"),
     "quad": ("NE", "NW", "SE", "SW"),
+    "discs": None,          # ("R", <disc labels>): set by RunConfig.disc_* (see disc_labels)
 }
+
+# FG2021 horizons (Fosalba & Gaztanaga 2021, MNRAS): centres from their Table 2 (Galactic
+# l, b in deg). Sizes quoted there: radius ~60, ~70, ~40 deg (Sec. 3.2), but "40 to 70 deg
+# in diameter" in the conclusions -- the paper is not self-consistent; the parameter maps
+# themselves use 60 deg DIAMETER discs.
+FG_HORIZON_CENTERS = {"H1": (345.0, 15.0), "H2": (240.0, -5.0), "H3": (150.0, -40.0)}
 
 
 #%% Cosmology
@@ -151,9 +158,13 @@ PRESETS = {
     "208As": replace(FIDUCIAL, As=2.08e-9, name="208As"),
     "212As": replace(FIDUCIAL, As=2.12e-9, name="212As"),
     "216As": replace(FIDUCIAL, As=2.16e-9, name="216As"),
-    "H1": Cosmology(H0=76.6, ombh2=0.025, omch2=0.102, ns=1.009, As=1.97e-9, tau=0.0522, name="H1"),
-    "H2": Cosmology(H0=61.3, ombh2=0.021, omch2=0.134, ns=0.921, As=2.17e-9, tau=0.0522, name="H2"),
-    "H3": Cosmology(H0=75.8, ombh2=0.023, omch2=0.104, ns=0.980, As=2.00e-9, tau=0.0522, name="H3")
+    # FG2021 horizons: mean of the 60 deg-diameter disc fits centred inside each horizon
+    # (their Fig. 28, Planck TT, tau fixed). Rounded as published (omega_b to 1e-3!).
+    "H1": replace(FIDUCIAL, H0=76.6, ombh2=0.025, omch2=0.102, ns=1.009, As=1.97e-9, name="H1"),
+    "H2": replace(FIDUCIAL, H0=61.3, ombh2=0.021, omch2=0.134, ns=0.921, As=2.17e-9, name="H2"),
+    "H3": replace(FIDUCIAL, H0=75.8, ombh2=0.023, omch2=0.104, ns=0.980, As=2.00e-9, name="H3"),
+    "FGall": replace(FIDUCIAL, H0=67.5, ombh2=0.022, omch2=0.119, ns=0.960, As=2.08e-9,
+                     name="FGall"),
 }
 
 # v2 name -> v1 name of presets that were renamed (only used to adopt v1 sim caches)
@@ -263,11 +274,32 @@ class RunConfig:
     naive_mask_v: float = None
     naive_l0_deg: float = 0.0
 
+    # layout 'discs': region 0 = rest of the sky ("R"), then one region per disc
+    disc_centers: tuple = ()       # ((l, b), ...) Galactic, deg
+    disc_radii_deg: tuple = ()     # one radius per disc, or a single value for all
+    disc_labels: tuple = ()        # e.g. ("H1", "H2", "H3"); default D1, D2, ...
+
     lmax_synth: int = field(init=False, default=0)
 
     def __post_init__(self):
         if self.layout not in LAYOUTS:
             raise ValueError(f"layout '{self.layout}' unknown; choose from {list(LAYOUTS)}")
+        if self.layout == "discs":
+            self.disc_centers = tuple(tuple(float(x) for x in c) for c in self.disc_centers)
+            n = len(self.disc_centers)
+            if n == 0 or any(len(c) != 2 for c in self.disc_centers):
+                raise ValueError("layout 'discs' needs disc_centers = ((l, b), ...)")
+            r = tuple(float(x) for x in np.atleast_1d(self.disc_radii_deg))
+            if len(r) == 1:
+                r = r * n
+            if len(r) != n or min(r) <= 0:
+                raise ValueError(f"disc_radii_deg: one positive radius or {n} of them")
+            self.disc_radii_deg = r
+            lab = tuple(self.disc_labels) or tuple(f"D{i + 1}" for i in range(n))
+            if len(lab) != n or len(set(lab)) != n or "R" in lab or \
+                    any(not str(x).replace("-", "").isalnum() for x in lab):
+                raise ValueError(f"disc_labels {lab}: {n} distinct alphanumeric names, not 'R'")
+            self.disc_labels = tuple(str(x) for x in lab)
         if self.phase_mode not in ("shared", "independent"):
             raise ValueError(f"phase_mode '{self.phase_mode}' unknown")
         # Maps are synthesised to the full band (3*nside-1) to avoid aliasing, but the analysis binning is capped at 1.5*nside.
@@ -290,6 +322,8 @@ class RunConfig:
 
     @property
     def labels(self) -> tuple:
+        if self.layout == "discs":
+            return ("R",) + tuple(self.disc_labels)
         return LAYOUTS[self.layout]
 
     def _mask_part(self) -> str:
@@ -328,6 +362,10 @@ class RunConfig:
             return ""
         if self.layout == "quad":
             return f"_quad_l0{self.naive_l0_deg:g}"
+        if self.layout == "discs":
+            spec = repr((self.disc_centers, self.disc_radii_deg, self.disc_labels))
+            h = hashlib.md5(spec.encode()).hexdigest()[:8]
+            return f"_discs{len(self.disc_centers)}r{max(self.disc_radii_deg):g}_{h}"
         return f"_{self.layout}"
 
     def key(self) -> str:

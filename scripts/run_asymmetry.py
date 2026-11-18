@@ -51,7 +51,8 @@ from hemcosmo.analysis import (bias_summary_regions, hypothesis_test, frequentis
                                mean_consistency)
 from hemcosmo import plots
 from hemcosmo.logutil import tee_output
-from hemcosmo.configfile import parse_with_config, add_path_arguments, runconfig_kwargs_from_args
+from hemcosmo.configfile import (parse_with_config, add_path_arguments, runconfig_kwargs_from_args,
+                                 add_disc_arguments, disc_kwargs_from_args)
 
 
 #%% Helpers
@@ -64,11 +65,11 @@ def build_config(args) -> RunConfig:
                      adopt_legacy_cache=args.adopt_legacy_cache,
                      nomask=args.nomask, naive_mask_v=args.naive_mask_v,
                      naive_mask_h=args.naive_mask_h, naive_l0_deg=args.naive_l0,
-                     **runconfig_kwargs_from_args(args))
+                     **disc_kwargs_from_args(args), **runconfig_kwargs_from_args(args))
 
 
 def resolve_regions(args, cfg):
-    labels = list(LAYOUTS[cfg.layout])
+    labels = list(cfg.labels)
     if args.regions:
         specs = list(args.regions)
     elif cfg.layout == "hemi":
@@ -120,8 +121,12 @@ def sanity_warnings(cfg, cosmos):
         print("[mixed] NOTE: phase_mode='shared' with different cosmologies = one primordial "
               "realization with l-by-l perfectly correlated regions. Exact for As/ns-type "
               "changes, only approximate for geometric ones (H0, omega_c shift the k->l projection).")
-    if cfg.naive_mask_h is None and (cfg.naive_mask_v is not None or cfg.nomask):
+    if cfg.layout != "discs" and cfg.naive_mask_h is None and (cfg.naive_mask_v is not None or cfg.nomask):
         print("[mixed] WARNING: no horizontal band -> the N/S seam at b=0 is in the observed sky")
+    if cfg.layout == "discs":
+        print("[mixed] NOTE: disc layout -> the disc edges are NOT masked; the stitching deficit "
+              "1-sum(a) printed by [weights] is larger than with hemispheres (it scales with the "
+              "blend width and the visible seam length). The paired null removes it.")
 
 
 #%% Pipeline
@@ -429,7 +434,8 @@ if __name__ == "__main__":
     p.add_argument("--layout", choices=list(LAYOUTS), default="hemi")
     p.add_argument("--regions", nargs="+", default=None,
                    help="one cosmology spec per region, in layout order "
-                        "(hemi: N S; quad: NE NW SE SW). Spec = preset | random:<seed> | "
+                        "(hemi: N S; quad: NE NW SE SW; discs: R then the discs). "
+                        "Spec = preset | random:<seed> | "
                         "custom:H0=..,ns=..[,name=..]")
     p.add_argument("--north", type=str, default="fiducial", help="hemi only (v1 interface)")
     p.add_argument("--south", type=str, default="74H0", help="hemi only (v1 interface)")
@@ -463,5 +469,6 @@ if __name__ == "__main__":
     p.add_argument("--naive_mask_h", type=float, default=None)
     p.add_argument("--naive_mask_v", type=float, default=None)
     p.add_argument("--naive_l0", type=float, default=0.0)
+    add_disc_arguments(p)
     add_path_arguments(p)
     main(parse_with_config(p))

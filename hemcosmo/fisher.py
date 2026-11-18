@@ -332,3 +332,101 @@ def gaussian_covariance(D_b, nmodes_b) -> np.ndarray:
     """
     D_b = np.asarray(D_b, float)
     return np.diag(2.0 * D_b ** 2 / np.asarray(nmodes_b, float))
+
+
+# ----------------------------------------------------------------------------- multi-spectrum
+# TT, TE, EE data vectors and their Gaussian covariance. Conventions:
+#   * bandpowers  D^X_b = dl_b * mean_{l in b} (C^X_l T_l^2)      (as NaMaster: binned C_l
+#                 with equal weights times l_eff(l_eff+1)/2pi; T_l = pixel window x beam)
+#   * the data vector stacks the spectra in the order given, each with its own band
+#     selection: [TT bands..., TE bands..., EE bands...]
+#   * noise is white in the map and deconvolved from the instrument beam:
+#     N_l = (Delta [muK arcmin] * pi/10800)^2 / B_l^2, added to C_l T_l^2 in the covariance
+FIELDS = {"TT": ("T", "T"), "TE": ("T", "E"), "EE": ("E", "E")}
+
+
+def gaussian_beam(fwhm_arcmin: float, lmax: int) -> np.ndarray:
+    """
+    Harmonic transfer of a Gaussian beam, B_l = exp(-l(l+1) sigma^2 / 2)
+    """
+    ell = np.arange(lmax + 1, dtype=float)
+    if not fwhm_arcmin or fwhm_arcmin <= 0:
+        return np.ones(lmax + 1)
+    sig = np.radians(fwhm_arcmin / 60.0) / np.sqrt(8.0 * np.log(2.0))
+    return np.exp(-0.5 * ell * (ell + 1) * sig ** 2)
+
+
+def white_noise(delta_T: float, delta_P: float, fwhm_arcmin: float, lmax: int) -> dict:
+    """
+    Beam-deconvolved white noise C_l (muK^2) for T and E; zero if delta = 0
+    """
+    b2 = gaussian_beam(fwhm_arcmin, lmax) ** 2
+    to_sr = (np.pi / 10800.0) ** 2
+    return {"T": (delta_T or 0.0) ** 2 * to_sr / b2,
+            "E": (delta_P or 0.0) ** 2 * to_sr / b2}
+
+
+def bin_spectra(cls: dict, spectra, ell_lists, dl_eff, transfer2, band_sel: dict) -> np.ndarray:
+    """
+    Stacked bandpowers [D^X_b for X in spectra, b in band_sel[X]] from C_l arrays
+    """
+    out = []
+    for X in spectra:
+        c = np.asarray(cls[X], float) * transfer2[:len(cls[X])]
+        db = np.array([dl_eff[b] * c[ells].mean() for b, ells in enumerate(ell_lists)])
+        out.append(db[band_sel[X]])
+    return np.concatenate(out)
+
+
+def knox_multispectrum(cls_obs: dict, noise: dict, spectra, ell_lists, dl_eff, fsky: float,
+                       band_sel: dict) -> np.ndarray:
+    """
+    Gaussian covariance of the stacked bandpowers (no bin-bin correlations):
+
+      Cov(C^ab_l, C^cd_l) = [Ct^ac Ct^bd + Ct^ad Ct^bc] / ((2l+1) f_sky),  Ct = C T^2 + N
+      Cov(D^X_b, D^Y_b)   = dl_b^2 / n_b^2  sum_{l in b} Cov(C^X_l, C^Y_l)
+
+    cls_obs : C_l T_l^2 for TT, TE, EE (the spectra the data vector is made of; all three
+              are needed for the TE and EE blocks even if they are not in the data vector)
+    noise   : {'T': N_l, 'E': N_l} (beam-deconvolved; zeros = cosmic-variance limited)
+    """
+    def ct(a, b):
+        key = a + b if a + b in cls_obs else b + a
+        c = np.asarray(cls_obs[key], float)
+        if a == b:
+            c = c + np.asarray(noise[a], float)[:c.size]
+        return c
+
+    pairs = [FIELDS[X] for X in spectra]
+    offsets, n = [], 0
+    for X in spectra:
+        offsets.append(n)
+        n += int(np.sum(band_sel[X]))
+    cov = np.zeros((n, n))
+    idx = {X: np.cumsum(band_sel[X]) - 1 for X in spectra}       # band -> position in block
+    for b, ells in enumerate(ell_lists):
+        ells = np.asarray(ells)
+        w = (2 * ells + 1.0) * fsky
+        for i, X in enumerate(spectra):
+            if not band_sel[X][b]:
+                continue
+            a1, b1 = pairs[i]
+            for j, Y in enumerate(spectra):
+                if not band_sel[Y][b]:
+                    continue
+                c1, d1 = pairs[j]
+                cl_cov = (ct(a1, c1)[ells] * ct(b1, d1)[ells]
+                          + ct(a1, d1)[ells] * ct(b1, c1)[ells]) / w
+                v = dl_eff[b] ** 2 * cl_cov.sum() / ells.size ** 2
+                cov[offsets[i] + idx[X][b], offsets[j] + idx[Y][b]] = v
+    return cov
+
+
+def dnu_from_cov(est: Estimator, cov, cov_mix) -> float:
+    """
+    Variance term of Q2 with an explicit covariance of the mixed sky (any data vector):
+        delta_nu = tr[C^-1 P_perp C_mix P_perp^T] - tr[C^-1 P_perp C P_perp^T]
+    """
+    P = est.P_perp
+    return float(np.trace(est.Cinv @ P @ np.asarray(cov_mix, float) @ P.T)
+                 - np.trace(est.Cinv @ P @ np.asarray(cov, float) @ P.T))

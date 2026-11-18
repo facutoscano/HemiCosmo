@@ -2,6 +2,8 @@
 """
 FG2021 Eq. (4) (linearized acoustic multipole) against the exact l_A = pi/theta_*.
 
+Part 0 (needs nothing): the published horizon means (FG2021 Fig. 28) through Eq. (4)
+        and exactly.
 Part 1 (needs nothing): coefficients and the theta_* = const degeneracy test.
 Part 2 (needs [observational] discfits): l_A maps of the data and the simulations built
         both ways, and their correlation with the H0 map, against the simulations.
@@ -22,7 +24,8 @@ sys.path.insert(0, ROOT)
 from hemcosmo.config import FIDUCIAL, PROJECT_DIR                     # noqa: E402
 from hemcosmo.configfile import load                                   # noqa: E402
 from hemcosmo.logutil import tee_output                                # noqa: E402
-from observational.fg_eq4 import (exact_coefficients, degeneracy_track, lA_maps)  # noqa: E402
+from observational.fg_eq4 import (exact_coefficients, degeneracy_track, lA_maps,  # noqa: E402
+                                   published_horizons)
 from observational.discfits import load_discfits                       # noqa: E402
 from observational.thetamaps import compare_to_null                    # noqa: E402
 
@@ -46,6 +49,15 @@ def main(a):
     with tee_output(os.path.join(out_dir, "check_eq4.log")):
         print(f"[eq4] FG2021 Eq.(4) as configured: dl_A/l_A = {a_h:+.3f} dh/h {a_m:+.3f} dw_m/w_m")
         print(f"[eq4] exact: l_A = pi/theta_*  (theta_* backend: {method}), reference = fiducial")
+        print("\n  Part 0 -- FG2021 Fig. 28 horizon means vs their all-sky mean (FGall):")
+        print(f"  {'':>4} {'dh/h':>7} {'dw_m/w_m':>9} {'Eq.(4) dln l_A':>15} {'exact dln l_A':>14} "
+              f"{'+-round':>8} {'dH0':>7} {'H0_geo':>7} {'H0_theta':>9}")
+        for r in published_horizons(a_h=a_h, a_m=a_m, method=method):
+            print(f"  {r['name']:>4} {r['dh_over_h']:+7.3f} {r['dwm_over_wm']:+9.3f} {r['fg']:+15.4f} "
+                  f"{r['exact']:+14.4f} {r['sigma_round']:8.4f} {r['dH0']:+7.2f} "
+                  f"{r['H0_geo']:+7.2f} {r['H0_theta']:+9.2f}")
+        print("  (+-round: exact dln l_A uncertainty from the published rounding of H0, w_b, w_c;"
+              "\n   H0_geo = slide along theta_* = const, H0_theta = peak shift; dH0 = H0_geo + H0_theta)")
         co = exact_coefficients(ref, method)
         print("\n  coefficient          FG Eq.(4)   exact (fixed w_b,w_c)   exact (fixed Omega_b,Omega_c)")
         print(f"  d ln l_A / d ln h   {a_h:+9.3f}   {co['fixed_omega']['a_h']:+21.3f}   "

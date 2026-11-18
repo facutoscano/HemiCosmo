@@ -14,10 +14,12 @@ check it with simulations.
                     (removes the stitching systematic; isolates the physics).
 
 Run with:
-python scripts/solve_region.py --layout quad --regions 74H0 092ns 1262omc ? --solve SW \
-    --naive_mask_h 6 --naive_mask_v 6 --nside 1024 --blend 3 --apod 1 --nsims 1000 \
-    --phase_mode independent --target baseline
+python scripts/solve_region.py --config configs/paper.toml --layout quad \
+    --regions ? H1 H3 H2 --solve NE --target baseline
+python scripts/solve_region.py --config configs/discs.toml --regions ? H1 H2 H3 --solve R
 (the '?' marks the region to solve; any spec is accepted there and ignored)
+--indep_cov (or [sims] indep_cov in the config) uses sims [N, 2N) for the covariance, as
+run_asymmetry does; they must exist already in the cache or they are generated.
 """
 import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
@@ -29,6 +31,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from hemcosmo.config import RunConfig, FIDUCIAL, LAYOUTS, PARAM_NAMES, get_cosmo, cosmo_from_fit
+from hemcosmo.configfile import (parse_with_config, add_path_arguments, runconfig_kwargs_from_args,
+                                 add_disc_arguments, disc_kwargs_from_args)
 from hemcosmo.masks import transfer_function, build_mask
 from hemcosmo.spectra import make_binning, get_workspace, analysis_bin_sel
 from hemcosmo.sims import get_or_generate_region_sims, covariance
@@ -41,8 +45,11 @@ def main(args):
                     apod_deg=args.apod, blend_width_deg=args.blend, nsims=args.nsims,
                     n_threads=args.n_threads, phase_mode=args.phase_mode, layout=args.layout,
                     naive_mask_h=args.naive_mask_h, naive_mask_v=args.naive_mask_v,
-                    naive_l0_deg=args.naive_l0, nomask=args.nomask)
-    labels = list(LAYOUTS[cfg.layout])
+                    naive_l0_deg=args.naive_l0, nomask=args.nomask,
+                    lmax_maps=args.lmax_maps, lmax_analysis=args.lmax_analysis,
+                    beam_fwhm_deg=args.beam,
+                    **disc_kwargs_from_args(args), **runconfig_kwargs_from_args(args))
+    labels = list(cfg.labels)
     if args.solve not in labels:
         raise SystemExit(f"--solve must be one of {labels}")
     b = labels.index(args.solve)
@@ -67,8 +74,13 @@ def run(args, cfg, labels, b, cosmos, stem):
 
     # covariance: the blind analyst's one (isotropic by default)
     iso = args.cov_mode == "isotropic"
-    ref = get_or_generate_region_sims(cfg.nsims, [FIDUCIAL] if iso else [FIDUCIAL] * len(labels),
-                                      cfg, mask, wsp, binning, isotropic=iso)[:, sel]
+    N = cfg.nsims
+    allb = get_or_generate_region_sims(2 * N if args.indep_cov else N,
+                                       [FIDUCIAL] if iso else [FIDUCIAL] * len(labels),
+                                       cfg, mask, wsp, binning, isotropic=iso)
+    ref = (allb[N:2 * N] if args.indep_cov else allb[:N])[:, sel]
+    print(f"[solve] covariance: {'independent' if args.indep_cov else 'in-sample'} "
+          f"{args.cov_mode} sims ({N})")
     cov = covariance(ref)
 
     em = ExpectedModel(cfg, mask, binning, wsp, tl, shared=(cfg.phase_mode == "shared"))
@@ -99,18 +111,22 @@ def run(args, cfg, labels, b, cosmos, stem):
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--layout", choices=list(LAYOUTS), default="quad")
-    p.add_argument("--regions", nargs="+", required=True)
+    p.add_argument("--regions", nargs="+", default=None)
     p.add_argument("--solve", required=True, help="label of the region to solve for")
     p.add_argument("--target", choices=["fiducial", "baseline"], default="baseline")
     p.add_argument("--cov_mode", choices=["stitched", "isotropic"], default="isotropic")
+    p.add_argument("--indep_cov", action="store_true")
     p.add_argument("--n_refine", type=int, default=4)
     p.add_argument("--nside", type=int, default=1024)
     p.add_argument("--delta_l", type=int, default=30)
     p.add_argument("--lmin", type=int, default=32)
+    p.add_argument("--lmax_maps", type=int, default=None)
+    p.add_argument("--lmax_analysis", type=int, default=None)
     p.add_argument("--apod", type=float, default=1.0)
     p.add_argument("--blend", type=float, default=3.0)
+    p.add_argument("--beam", type=float, default=0.0)
     p.add_argument("--nsims", type=int, default=1000)
     p.add_argument("--n_threads", type=int, default=None)
     p.add_argument("--phase_mode", choices=["shared", "independent"], default="independent")
@@ -118,4 +134,9 @@ if __name__ == "__main__":
     p.add_argument("--naive_mask_h", type=float, default=None)
     p.add_argument("--naive_mask_v", type=float, default=None)
     p.add_argument("--naive_l0", type=float, default=0.0)
-    main(p.parse_args())
+    add_disc_arguments(p)
+    add_path_arguments(p)
+    args = parse_with_config(p, ignore=("regions", "north", "south"))
+    if not args.regions:
+        raise SystemExit("--regions is required (use '?' for the region to solve)")
+    main(args)

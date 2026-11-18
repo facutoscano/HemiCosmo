@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from hemcosmo.config import FIDUCIAL, PARAM_NAMES, PARAM_LABELS
 from hemcosmo.configfile import parse_with_config, add_geometry_arguments, runconfig_from_args
 from hemcosmo.acoustic import lntheta_vec
+from hemcosmo.prediction import add_data_mode_arguments, data_mode_from_args
 
 COLORS = {"H0": "#2a78d6", "ombh2": "#1baf7a", "omch2": "#eb6834", "ns": "#8a5cc2",
           "As_tau": "#eda100"}
@@ -159,16 +160,21 @@ def main(a):
     cfg = runconfig_from_args(a)
     s = a._settings or {"prediction": {}}
     covariance = a.covariance or s["prediction"].get("covariance", "sims")
+    mode = data_mode_from_args(a, s["prediction"])
+    if mode["binning_mode"] == "theory":
+        covariance = "gaussian"
     north = (a.regions or [a.north])[0]
     path = os.path.join(cfg.results_dir, "prediction",
-                        f"predscan_{north}_{cfg.key()}_{covariance}.npz")
+                        f"predscan_{north}_{cfg.key()}_{covariance}{mode['tag']}.npz")
     if not os.path.exists(path):
         raise SystemExit(f"{path} not found: run scripts/run_prediction.py --scan first")
     t = dict(np.load(path))
     sims = load_sims(cfg, a.cov_mode, a.indep_cov)
     print(f"[plot_prediction] {len(t['souths'])} predicted skies, {len(sims)} simulated runs matched")
     out = os.path.join(cfg.results_dir, "prediction")
-    tag = f"{cfg.key()}_{covariance}"
+    tag = f"{cfg.key()}_{covariance}{mode['tag']}"
+    if mode["tag"]:
+        sims = {}                   # the simulations are TT pseudo-C_l: not comparable
     fig_law(t, sims, os.path.join(out, f"pred_H0law_{tag}.png"),
             f"Fisher prediction vs simulations ({cfg._mask_part().strip('_')})")
     fig_detect(t, sims, os.path.join(out, f"pred_detectability_{tag}.png"),
@@ -182,4 +188,5 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     add_geometry_arguments(p)
     p.add_argument("--covariance", choices=["sims", "gaussian"], default=None)
+    add_data_mode_arguments(p)
     main(parse_with_config(p))

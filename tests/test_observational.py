@@ -81,3 +81,36 @@ def test_run_theta_maps_script(tmp_path):
         assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
     assert (tmp_path / "obs" / "theta_maps.npz").exists()
     assert (tmp_path / "obs" / "check_eq4.png").exists()
+
+
+def test_published_horizons_eq4_vs_exact():
+    from observational.fg_eq4 import published_horizons
+    rows = {r["name"]: r for r in published_horizons()}
+    for n in ("H1", "H2"):                       # on theta_* = const within the rounding
+        r = rows[n]
+        assert abs(r["exact"]) < 1.5 * r["sigma_round"]
+        assert abs(r["fg"]) > 10 * r["sigma_round"]          # Eq. (4) sees an l_A "horizon"
+        assert np.isclose(r["H0_geo"] + r["H0_theta"], r["dH0"])
+        assert abs(r["H0_theta"]) < 0.1 * abs(r["H0_geo"])
+
+
+def test_injection_truth_script(tmp_path):
+    import importlib.util, os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "rit", os.path.join(root, "observational", "run_injection_truth.py"))
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    p = m.argparse.ArgumentParser(); m.add_geometry_arguments(p)
+    for f, kw in (("--nside_disc", dict(type=int, default=4)),
+                  ("--analysis_radius", dict(type=float, default=None)),
+                  ("--nside_pix", dict(type=int, default=16)),
+                  ("--full_sky", dict(action="store_true"))):
+        p.add_argument(f, **kw)
+    a = m.parse_with_config(p, ["--config", os.path.join(root, "configs", "discs.toml"),
+                                "--regions", "FGall", "H1", "H2", "H3", "--full_sky",
+                                "--results_dir", str(tmp_path), "--cache_dir", str(tmp_path)])
+    m.PROJECT_DIR = str(tmp_path)
+    m.main(a)
+    d = np.load(next((tmp_path / "results" / "observational").glob("injection_truth_*.npz")))
+    assert d["params"].shape == (1, 192, 5)
+    assert np.std(d["dln_lA_eq4"]) > 10 * np.std(d["dln_lA_exact"])

@@ -22,6 +22,7 @@ typo can never be silently ignored.
 from __future__ import annotations
 import os
 import argparse
+import numpy as np
 import tomllib
 
 from .config import RunConfig, PROJECT_DIR
@@ -33,12 +34,15 @@ SCHEMA = {
                      apod_deg=(int, float), blend_deg=(int, float),
                      beam_fwhm_deg=(int, float), mask=str, naive_mask_h=(int, float),
                      naive_mask_v=(int, float), naive_l0_deg=(int, float)),
-    "sky": dict(layout=str, phase_mode=str, regions=list),
+    "sky": dict(layout=str, phase_mode=str, regions=list, discs=list,
+                disc_radius_deg=(int, float, list), disc_labels=list),
     "sims": dict(nsims=int, n_threads=int, seed=int, cov_mode=str, indep_cov=bool,
                  fit=str, expected=bool, compare_cov=bool, eff_cov=bool,
                  adopt_legacy_cache=bool),
     "prediction": dict(covariance=str, mean_model=str, fit=str, extra_params=list,
-                       theta_method=str, scan=list),
+                       theta_method=str, scan=list, spectra=list, binning=str, noise=str,
+                       noise_T=(int, float), noise_P=(int, float), noise_fwhm=(int, float),
+                       lmax_pol=int),
     "injections": dict(sources=list, method=str, registry=str),
     "observational": dict(discfits=str, out_dir=str, disc_radius_deg=(int, float),
                           theta_method=str, lmax_stat=int, remove_low=list,
@@ -48,7 +52,7 @@ SCHEMA = {
 }
 CHOICES = {
     ("geometry", "mask"): ("naive", "common", "none"),
-    ("sky", "layout"): ("hemi", "quad"),
+    ("sky", "layout"): ("hemi", "quad", "discs"),
     ("sky", "phase_mode"): ("independent", "shared"),
     ("sims", "cov_mode"): ("isotropic", "stitched"),
     ("sims", "fit"): ("minuit", "linear"),
@@ -56,6 +60,8 @@ CHOICES = {
     ("prediction", "mean_model"): ("coupling", "scalar"),
     ("prediction", "fit"): ("linear", "minuit"),
     ("prediction", "theta_method"): ("hs96", "camb"),
+    ("prediction", "binning"): ("namaster", "theory"),
+    ("prediction", "noise"): ("none", "planck", "custom"),
     ("injections", "method"): ("hs96", "camb"),
     ("observational", "theta_method"): ("hs96", "camb"),
 }
@@ -145,6 +151,7 @@ def run_config(s: dict, **overrides) -> RunConfig:
               seed=m.get("seed", 1234),
               adopt_legacy_cache=m.get("adopt_legacy_cache", False))
     kw.update(mask_flags(s))
+    kw.update(disc_kwargs(k.get("discs"), k.get("disc_radius_deg"), k.get("disc_labels")))
     if mask_path(s):
         kw["mask_path"] = mask_path(s)
     if "results_dir" in p:
@@ -153,6 +160,43 @@ def run_config(s: dict, **overrides) -> RunConfig:
         kw["cache_dir"] = _abs(p["cache_dir"])
     kw.update(overrides)
     return RunConfig(**kw)
+
+
+def disc_kwargs(discs=None, radius=None, labels=None) -> dict:
+    """
+    RunConfig disc_* fields from config/CLI values. discs: [[l, b], ...] or ["l,b", ...];
+    radius: a number or one per disc; labels: names (default D1, D2, ...)
+    """
+    if not discs:
+        return {}
+    cen = []
+    for c in discs:
+        if isinstance(c, str):
+            c = [float(x) for x in c.replace(" ", "").split(",")]
+        if len(c) != 2:
+            raise ConfigError(f"disc centre {c!r}: expected (l, b) in degrees")
+        cen.append((float(c[0]), float(c[1])))
+    r = 30.0 if radius is None else radius
+    return dict(disc_centers=tuple(cen),
+                disc_radii_deg=tuple(float(x) for x in np.atleast_1d(r)),
+                disc_labels=tuple(labels or ()))
+
+
+def disc_kwargs_from_args(args) -> dict:
+    return disc_kwargs(getattr(args, "discs", None), getattr(args, "disc_radius", None),
+                       getattr(args, "disc_labels", None))
+
+
+def add_disc_arguments(parser: argparse.ArgumentParser) -> None:
+    """
+    --discs l,b ... / --disc_radius R [R ...] / --disc_labels NAME ... (layout 'discs')
+    """
+    parser.add_argument("--discs", nargs="+", default=None,
+                        help="disc centres 'l,b' (deg, Galactic) for --layout discs")
+    parser.add_argument("--disc_radius", nargs="+", type=float, default=None,
+                        help="disc radius in deg (one value, or one per disc); default 30")
+    parser.add_argument("--disc_labels", nargs="+", default=None,
+                        help="region names of the discs (default D1 D2 ...); rest of sky = R")
 
 
 def region_specs(s: dict) -> list:
@@ -178,6 +222,10 @@ def argparse_defaults(s: dict) -> dict:
     for key in ("layout", "phase_mode"):
         if key in k:
             d[key] = k[key]
+    for key, dest in (("discs", "discs"), ("disc_radius_deg", "disc_radius"),
+                      ("disc_labels", "disc_labels")):
+        if key in k:
+            d[dest] = k[key]
     if "regions" in k:
         regs = list(k["regions"])
         if k.get("layout", "hemi") == "hemi" and len(regs) == 2:
@@ -265,7 +313,7 @@ def add_geometry_arguments(parser: argparse.ArgumentParser) -> None:
     a("--naive_mask_h", type=float, default=None)
     a("--naive_mask_v", type=float, default=None)
     a("--naive_l0", type=float, default=0.0)
-    a("--layout", choices=["hemi", "quad"], default="hemi")
+    a("--layout", choices=["hemi", "quad", "discs"], default="hemi")
     a("--phase_mode", choices=["independent", "shared"], default="independent")
     a("--regions", nargs="+", default=None)
     a("--north", default="fiducial")
@@ -274,6 +322,7 @@ def add_geometry_arguments(parser: argparse.ArgumentParser) -> None:
     a("--n_threads", type=int, default=None)
     a("--cov_mode", choices=["isotropic", "stitched"], default="isotropic")
     a("--indep_cov", action="store_true")
+    add_disc_arguments(parser)
     add_path_arguments(parser)
 
 
@@ -284,7 +333,7 @@ def runconfig_from_args(args) -> RunConfig:
                      nsims=args.nsims, n_threads=args.n_threads, phase_mode=args.phase_mode,
                      layout=args.layout, nomask=args.nomask, naive_mask_h=args.naive_mask_h,
                      naive_mask_v=args.naive_mask_v, naive_l0_deg=args.naive_l0,
-                     **runconfig_kwargs_from_args(args))
+                     **disc_kwargs_from_args(args), **runconfig_kwargs_from_args(args))
 
 
 def regions_from_args(args) -> list:

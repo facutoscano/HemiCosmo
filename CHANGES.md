@@ -129,3 +129,36 @@
 ## Changed
 - All user-facing text in English (run_validation, plot_summary, plot_scan, tidy_results).
 - `tidy_results.py` keeps `results/prediction/`, `results/observational/`, `results/logs/`.
+
+
+# Iteration 6 — TTTEEE prediction, disc layout (FG2021 horizons), Eq. (4) on the published horizons
+
+## New
+- **Polarization in the prediction.** `theory.cosmology_to_spectra` (TT, TE, EE);
+  `fisher.knox_multispectrum`, `bin_spectra`, `white_noise`, `gaussian_beam`, `dnu_from_cov`;
+  `prediction.setup_geometry(..., spectra, binning_mode, noise, noise_T, noise_P, noise_fwhm,
+  lmax_pol)`. TE/EE imply `binning = "theory"` (binned sky spectra, Gaussian multi-spectrum
+  covariance with f_sky,eff and beam-deconvolved white noise, scalar mixture). Noise presets
+  `none` and `planck` (33 / 46.7 muK', 7.3'), or `custom`. CLI `--spectra --binning --noise
+  --noise_T --noise_P --noise_fwhm --lmax_pol`; `[prediction]` keys of the same names.
+  Outputs tagged `_<spectra>_<binning>_<noise>`; TT pseudo-C_l names unchanged.
+- `scripts/plot_spectra_compare.py`: ΔH0, ΔH0/σ(H0) and λ₂ vs Var_w for every data vector.
+- **Layout `discs`.** Region `R` (rest of the sky) + one region per disc; smooth partition
+  of unity (`hemcosmo/discs.py`, pure numpy) with overlaps assigned to the deepest disc.
+  `RunConfig.disc_centers / disc_radii_deg / disc_labels`; `[sky] discs, disc_radius_deg,
+  disc_labels`; CLI `--layout discs --discs l,b ... --disc_radius --disc_labels`.
+  `configs/discs.toml`: FG2021 H1, H2, H3 at their Table 2 centres, Planck common mask.
+- Presets `H1`, `H2`, `H3`, `FGall`: FG2021 Fig. 28 (named, so outputs are labelled).
+- `scripts/make_mixed_maps.py`: composite skies to FITS (same seeds as the runs) + windows
+  + region JSON, for an external disc-fit pipeline (injection–recovery).
+- `observational/injection_truth.py` + `run_injection_truth.py`: expected first-order disc
+  maps (ΔH0, Eq. (4) ℓ_A, exact ℓ_A) of an injected sky. No CAMB.
+- `observational/fg_eq4.published_horizons` and Part 0 of `run_check_eq4.py`: Eq. (4) vs
+  exact on the FG2021 Fig. 28 horizon means, with the rounding uncertainty.
+- `plot_maps.py` also draws the region windows and the stitching-deficit map; `--config`.
+- `solve_region.py`: `--config`, any layout (discs included), `--indep_cov`.
+
+## Changed
+- The stitched-null zero-noise fit is computed once per geometry (`prediction.null_fit`).
+- Empty cosmology names fall back to the value tag in outputs (no more `pred_fiducial____`).
+- `[observational]` comment: the FG2021 Eq. (4) coefficients are checked against the paper.

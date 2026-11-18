@@ -30,30 +30,34 @@ the amplitude combination that temperature data actually constrain.
 ```
 configs/
   paper.toml             THE configuration file (geometry, sims, prediction, observational)
+  discs.toml             the same with [sky] layout = "discs": FG2021 horizons H1, H2, H3
   theta_presets.json     theta_*-preserving / -matched cosmologies (made by make_theta_presets.py)
 hemcosmo/                the package
   config.py              Cosmology, RunConfig, fiducial and preset cosmologies
   configfile.py          reads configs/*.toml -> RunConfig and script defaults
-  theory.py              CAMB lensed TT spectra (optional A_L)
+  theory.py              CAMB lensed TT, TE, EE spectra (optional A_L)
   masks.py, spectra.py   masks, region windows/weights, NaMaster bandpowers
+  discs.py               disc regions on the sphere (pure numpy; layout "discs")
   sims.py                cached, metadata-verified composite-sky simulations
   likelihood.py          chi^2 + Minuit fit (Hartlap)
   response.py            Jacobian + damped Gauss-Newton fit
   expected.py            exact ensemble mean of a composite sky (coupling matrices)
   analysis.py            per-sky estimators, Q1/Q2 statistics, tables
-  acoustic.py            theta_*: definition, inverse, sensitivities g, H0 split   <- new
-  fisher.py              Fisher algebra of the blind fit (no CAMB, unit-tested)    <- new
-  prediction.py          predictions from a config (CAMB + NaMaster glue)          <- new
-  injections.py          theta_*-preserving / theta_*-matched injections           <- new
+  acoustic.py            theta_*: definition, inverse, sensitivities g, H0 split
+  fisher.py              Fisher algebra of the blind fit (no CAMB, unit-tested), multi-spectrum Knox
+  prediction.py          predictions from a config (CAMB + NaMaster glue)
+  injections.py          theta_*-preserving / theta_*-matched injections
   plots.py, scanio.py, logutil.py
 scripts/
   run_asymmetry.py       simulations of one mixed sky: bias, Q1, Q2, expected mean
   run_validation.py      null test of the pipeline (equal cosmologies)
   run_PRESETscan.sh      the 25-South scan of the paper
-  run_prediction.py      Fisher predictions, single sky or scan (no simulations)  <- new
-  plot_prediction.py     prediction figures, compared with the simulated scan     <- new
-  make_theta_presets.py  writes configs/theta_presets.json                         <- new
-  run_injections.sh      simulations of the theta_* injections                     <- new
+  run_prediction.py      Fisher predictions, single sky or scan (no simulations); TT or TTTEEE
+  plot_prediction.py     prediction figures, compared with the simulated scan
+  plot_spectra_compare.py  TT pseudo-C_l vs TT theory vs TTTEEE (CV / noise) predictions
+  make_mixed_maps.py     mixed skies to FITS (same seeds as the runs) for a disc-fit pipeline
+  make_theta_presets.py  writes configs/theta_presets.json
+  run_injections.sh      simulations of the theta_* injections
   plot_scan.py, plot_total.py, plot_summary.py, plot_maps.py, solve_region.py, tidy_results.py
 observational/           theta_* maps of the real sky, FG2021 Eq. (4) check (own README)
 paper/                   LaTeX draft of the formalism (hemicosmo_draft.tex)
@@ -148,6 +152,29 @@ By default (`covariance = "sims"`) it reads the cached isotropic simulations, so
 covariance is exactly the one the runs use. It never generates new simulations.
 `--covariance gaussian` needs none at all.
 
+#### Polarization (TTTEEE)
+
+There are no TE/EE simulations, so polarization is a prediction only. With TE or EE in
+the data vector the prediction switches to `binning = "theory"`: binned sky spectra,
+Gaussian multi-spectrum covariance (Knox, f_sky,eff of the mask, optional white noise)
+and the scalar mixture Σ_k a_k D(p_k). Run TT in the same mode as reference:
+
+```bash
+python scripts/run_prediction.py --config configs/paper.toml --scan --binning theory              # TT reference
+python scripts/run_prediction.py --config configs/paper.toml --scan --spectra TT TE EE            # CV-limited
+python scripts/run_prediction.py --config configs/paper.toml --scan --spectra TT TE EE --noise planck
+python scripts/plot_spectra_compare.py --config configs/paper.toml
+```
+
+- TT(theory) − TT(namaster): the cost of the approximations (no mode coupling, scalar
+  mixture, Gaussian covariance). It should be small: check it before reading the rest.
+- TTTEEE(theory) − TT(theory): the effect of polarization on the bias, on its
+  significance ΔH0/σ(H0) and on λ₂.
+
+Output names carry a tag, e.g. `predscan_<north>_<key>_gaussian_TTTEEE_theory_planck.npz`;
+the TT pseudo-C_l files keep their old names. The stitched-null fit is computed once per
+geometry and reused for every sky of a scan.
+
 ### 3. Causal test: injections that preserve θ\*
 
 ```bash
@@ -160,12 +187,35 @@ nohup scripts/run_injections.sh > results/logs/injections_master.log 2>&1 &   # 
 `<src>_thfix` keeps ω_c of the source but re-solves H0 so that θ\* is the fiducial
 one (Var_w = 0). `<src>_thmatch` is a pure H0 shift with the same Var_w as the source.
 
-### 4. Observational
+### 4. FG2021 horizons as regions
 
-See `observational/README.md`. It covers the FG2021 Eq. (4) check (part 1 needs no
-data) and the θ\* maps from disc fits of the data and of simulations.
+`configs/discs.toml` sets `[sky] layout = "discs"`: region `R` is the rest of the sky and
+`H1`, `H2`, `H3` are discs at the FG2021 centres (their Table 2) with the parameters of
+their Fig. 28 (presets `H1`, `H2`, `H3`; `FGall` is their all-sky mean). The disc radius
+is 30° (the 60°-diameter discs of the parameter maps) by default; FG2021 also quote
+horizon sizes of about 60°, 70° and 40° (`disc_radius_deg = [60, 70, 40]`; overlaps go
+to the disc a point is deepest in). The mask is the Planck common mask: the disc edges
+cannot be hidden by bands, so the stitching deficit is larger than with hemispheres
+(printed by `[weights]`; the paired null removes it).
 
-### 5. Paper
+```bash
+python scripts/plot_maps.py      --config configs/discs.toml                 # check the windows first
+python scripts/run_prediction.py --config configs/discs.toml                 # Fisher, no sims
+python scripts/run_asymmetry.py  --config configs/discs.toml                 # sims
+python scripts/solve_region.py   --config configs/discs.toml --regions ? H1 H2 H3 --solve R
+python scripts/make_mixed_maps.py --config configs/discs.toml --nmaps 100     # maps for a disc pipeline
+```
+
+Quadrants with the same horizons: `--config configs/paper.toml --layout quad --regions
+fiducial H1 H3 H2` (NE = PR3, NW = H1, SE = H3, SW = H2).
+
+### 5. Observational
+
+See `observational/README.md`. It covers the FG2021 Eq. (4) check (parts 0 and 1 need
+no data), the expected disc maps of an injected sky, and the θ\* maps from disc fits of
+the data and of simulations.
+
+### 6. Paper
 
 ```bash
 cd paper && latexmk -pdf hemicosmo_draft.tex

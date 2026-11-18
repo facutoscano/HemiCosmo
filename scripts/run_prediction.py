@@ -20,6 +20,13 @@ Examples
         --souths 1110omc 1110omc_thfix 1110omc_thmatch                          # causal test
   python scripts/run_prediction.py --config configs/paper.toml --covariance gaussian  # no sims at all
 
+Polarization (theory binning, Gaussian multi-spectrum covariance, scalar mixture):
+  python scripts/run_prediction.py --config configs/paper.toml --scan --binning theory          # TT reference
+  python scripts/run_prediction.py --config configs/paper.toml --scan --spectra TT TE EE        # CV-limited
+  python scripts/run_prediction.py --config configs/paper.toml --scan --spectra TT TE EE --noise planck
+Compare TT(theory) with TT(namaster) first: that difference is the cost of the
+approximation; TTTEEE(theory) - TT(theory) is the effect of adding polarization.
+
 Then:  python scripts/plot_prediction.py --config configs/paper.toml
 """
 import os
@@ -33,13 +40,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from hemcosmo.config import get_cosmo, FIDUCIAL, PARAM_NAMES
 from hemcosmo.configfile import (parse_with_config, add_geometry_arguments,
                                  runconfig_from_args, regions_from_args)
-from hemcosmo.prediction import setup_geometry, predict, save_prediction
+from hemcosmo.prediction import (setup_geometry, predict, save_prediction,
+                                 add_data_mode_arguments, data_mode_from_args)
 from hemcosmo.logutil import tee_output
 
 
-def out_stem(cfg, covariance, label):
+def out_stem(cfg, covariance, label, tag=""):
     d = cfg.results_for("prediction")
-    return os.path.join(d, f"{label}_{cfg.key()}_{covariance}")
+    return os.path.join(d, f"{label}_{cfg.key()}_{covariance}{tag}")
 
 
 def injected_x(o, sigma_fid):
@@ -65,6 +73,10 @@ def main(a):
     extra = a.extra if a.extra is not None else ps.get("extra_params", ["Alens"])
     method = a.theta_method or ps.get("theta_method", "hs96")
     cfg = runconfig_from_args(a)
+    mode = data_mode_from_args(a, ps)
+    tag = mode.pop("tag")
+    if mode["binning_mode"] == "theory":
+        covariance = "gaussian"
 
     if a.scan:
         north = regions_from_args(a)[0]
@@ -72,19 +84,20 @@ def main(a):
         if not souths:
             raise SystemExit("--scan needs --souths or [prediction] scan in the config")
         skies = [[north, sp] for sp in souths]
-        stem = out_stem(cfg, covariance, f"predscan_{north}")
+        stem = out_stem(cfg, covariance, f"predscan_{north}", tag)
     else:
         skies = [regions_from_args(a)]
-        stem = out_stem(cfg, covariance, "pred_" + "_".join(get_cosmo(x).name for x in skies[0]))
+        stem = out_stem(cfg, covariance, "pred_" + "_".join(
+            (get_cosmo(x).name or get_cosmo(x).tag()) for x in skies[0]), tag)
 
     with tee_output(stem + ".log"):
-        geo = setup_geometry(cfg, covariance, mean_model, a.cov_mode, a.indep_cov)
+        geo = setup_geometry(cfg, covariance, mean_model, a.cov_mode, a.indep_cov, **mode)
         rows = []
         for specs in skies:
             cosmos = [get_cosmo(x) for x in specs]
             o = predict(geo, cosmos, extra_params=tuple(extra), fit=fit, theta_method=method)
-            label = "pred_" + "_".join(c.name for c in cosmos)
-            f = save_prediction(o, out_stem(cfg, covariance, label) + ".npz")
+            label = "pred_" + "_".join(c.name or c.tag() for c in cosmos)
+            f = save_prediction(o, out_stem(cfg, covariance, label, tag) + ".npz")
             print(f"[prediction] saved {f}")
             rows.append(o)
         if a.scan:
@@ -92,6 +105,7 @@ def main(a):
                             theta_method=method, verbose=False)
             sig_fid = o_fid["sigma"]
             table = dict(souths=np.array([r["names"][1] for r in rows]),
+                         spectra=np.array(o_fid.get("spectra", ["TT"])),
                          dp_onestep=np.array([r["dp_onestep"] for r in rows]),
                          sigma=np.array([r["sigma"] for r in rows]), sigma_fid=sig_fid,
                          x=np.array([injected_x(r, sig_fid)[2] for r in rows]),
@@ -143,4 +157,5 @@ if __name__ == "__main__":
                    help="zero-noise nonlinear fit of the predicted mean ('none' = one step only)")
     p.add_argument("--extra", nargs="*", default=None, help="extra free parameters (Alens)")
     p.add_argument("--theta_method", choices=["hs96", "camb"], default=None)
+    add_data_mode_arguments(p)
     main(parse_with_config(p))

@@ -1,6 +1,6 @@
 """
 Theory module (CAMB):
--Lensed TT spectrum of a Cosmology (optionally with a lensing amplitude A_L != 1)
+-Lensed TT (and TE, EE) spectra of a Cosmology (optionally with a lensing amplitude A_L != 1)
 -sigma8 and its gradient in the fit basis
 """
 
@@ -9,11 +9,15 @@ import numpy as np
 import camb
 from .config import Cosmology, cosmo_from_fit
 
-def cosmology_to_cls(cosmo: Cosmology, lmax: int,
-                     lens_potential_accuracy: int = 1,
-                     dl: bool = False, Alens: float = 1.0) -> np.ndarray:
+SPECTRA_ALL = ("TT", "TE", "EE")
+_CAMB_COL = {"TT": 0, "EE": 1, "BB": 2, "TE": 3}      # columns of CAMB's 'total' array
+
+
+def cosmology_to_spectra(cosmo: Cosmology, lmax: int, lens_potential_accuracy: int = 1,
+                         Alens: float = 1.0, spectra=SPECTRA_ALL, dl: bool = False) -> dict:
     """
-    Return the lensed TT spectrum (total) for 'cosmo', length lmax+1.
+    Lensed (total) CMB spectra of 'cosmo' in muK^2, one array of length lmax+1 per entry
+    of 'spectra' (any of TT, TE, EE, BB). C_l by default, D_l = l(l+1)C_l/2pi if dl.
     Alens scales the lensing potential power (A_L); 1 = standard (not touched).
     """
     pars = camb.CAMBparams()
@@ -24,18 +28,31 @@ def cosmology_to_cls(cosmo: Cosmology, lmax: int,
     pars.InitPower.set_params(As=cosmo.As, ns=cosmo.ns, r=0)
     pars.set_for_lmax(lmax, lens_potential_accuracy=lens_potential_accuracy)
     results = camb.get_results(pars)
-    dltt = results.get_cmb_power_spectra(pars, CMB_unit="muK")["total"][:, 0]
+    tot = results.get_cmb_power_spectra(pars, CMB_unit="muK")["total"]
+    ell = np.arange(lmax + 1)
+    out = {}
+    for X in spectra:
+        d = np.zeros(lmax + 1)
+        n = min(tot.shape[0], lmax + 1)
+        d[:n] = tot[:n, _CAMB_COL[X]]
+        if dl:
+            out[X] = d
+        else:
+            c = np.zeros_like(d)
+            c[2:] = 2.0 * np.pi * d[2:] / (ell[2:] * (ell[2:] + 1))
+            out[X] = c
+    return out
 
-    out = np.zeros(lmax + 1)
-    n = min(len(dltt), lmax + 1)
-    out[:n] = dltt[:n]
 
-    if dl:
-        return out
-    ell = np.arange(out.size)
-    cl = np.zeros_like(out)
-    cl[2:] = 2.0 * np.pi * out[2:] / (ell[2:] * (ell[2:] + 1))
-    return cl
+def cosmology_to_cls(cosmo: Cosmology, lmax: int,
+                     lens_potential_accuracy: int = 1,
+                     dl: bool = False, Alens: float = 1.0) -> np.ndarray:
+    """
+    Return the lensed TT spectrum (total) for 'cosmo', length lmax+1.
+    Alens scales the lensing potential power (A_L); 1 = standard (not touched).
+    """
+    return cosmology_to_spectra(cosmo, lmax, lens_potential_accuracy, Alens=Alens,
+                                spectra=("TT",), dl=dl)["TT"]
 
 def fitvec_to_cls(H0, ombh2, omch2, ns, As_tau, tau, lmax,
                   lens_potential_accuracy: int = 1, dl: bool = False) -> np.ndarray:

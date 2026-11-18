@@ -11,9 +11,12 @@ noise moves H0 and w_m together) the exact Delta l_A vanishes. A linearized form
 that does not vanish there turns the H0 map into an l_A map, so an l_A map built with
 it would show the H0 "horizons" whether or not the peaks actually move.
 
-VERIFY the transcribed coefficients (signs!) against the published Eq. (4) and against
-Hu et al. (2001), Eqs. (A15)-(A17), before quoting anything: they are inputs here
-(configs/paper.toml, [observational] fg_eq4_a_h / fg_eq4_a_m).
+The coefficients are inputs (configs/paper.toml, [observational] fg_eq4_a_h / fg_eq4_a_m).
+Checked against the published paper (FG2021 Sec. 3.6, Eq. 4, citing Hu et al. 2001
+Eqs. A15-A17): Delta l_A/l_A ~ Delta h/h + 0.59 Delta w_m/w_m, with w_m = w_c + w_b.
+
+published_horizons() applies both to the horizon means of FG2021 Fig. 28 (presets H1, H2,
+H3 and FGall), which needs no disc fits at all.
 """
 from __future__ import annotations
 import os
@@ -95,3 +98,39 @@ def lA_maps(df, ref_per_real: bool = True, a_h: float = 1.0, a_m: float = 0.59,
         ex[r, v] = [lt_ref - lntheta(H0[r, d], wb[r, d], wc[r, d], method=method)
                     for d in np.where(v)[0]]
     return dict(fg=fg, exact=ex, valid=df.valid.copy())
+
+
+def published_horizons(ref_name: str = "FGall", names=("H1", "H2", "H3"),
+                       a_h: float = 1.0, a_m: float = 0.59, method: str = "hs96",
+                       rounding=(0.05, 5e-4, 5e-4)) -> list:
+    """
+    FG2021 Fig. 28 horizon means against their all-sky mean: Delta ln l_A from Eq. (4)
+    and exactly, and the exact split of Delta H0 into the slide along theta_* = const
+    (H0_geo) and the peak shift (H0_theta).
+
+    rounding: half of the last published digit of (H0, w_b, w_c); its effect on the
+    exact Delta ln l_A (horizon and reference both rounded) is propagated linearly with
+    independent errors, because w_b is only given to 1e-3 and d ln theta_*/d w_b ~ -2.4.
+    Uniform rounding errors have sigma = half-digit/sqrt(3): this is a conservative bound.
+    """
+    from hemcosmo.config import get_cosmo
+    from hemcosmo.acoustic import sensitivities
+    ref = get_cosmo(ref_name).as_vector()[:3]
+    lt_ref = lntheta(*ref, method=method)
+    wm_ref = ref[1] + ref[2] + OMNUH2_FIDUCIAL
+    rows = []
+    for n in names:
+        H0, wb, wc = get_cosmo(n).as_vector()[:3]
+        lt = lntheta(H0, wb, wc, method=method)
+        H0_on = H0_from_lntheta(lt_ref, wb, wc, method=method)
+        g = np.asarray(sensitivities(H0, wb, wc, method=method))[:3]
+        g_ref = np.asarray(sensitivities(*ref, method=method))[:3]
+        r2 = np.asarray(rounding) ** 2                    # horizon AND reference are rounded
+        sig_round = float(np.sqrt(np.sum(g ** 2 * r2) + np.sum(g_ref ** 2 * r2)))
+        rows.append(dict(name=n, H0=H0, ombh2=wb, omch2=wc,
+                         dh_over_h=H0 / ref[0] - 1, dwm_over_wm=(wb + wc + OMNUH2_FIDUCIAL) / wm_ref - 1,
+                         fg=float(fg_dln_lA(H0 / ref[0] - 1,
+                                            (wb + wc + OMNUH2_FIDUCIAL) / wm_ref - 1, a_h, a_m)),
+                         exact=lt_ref - lt, sigma_round=sig_round,
+                         dH0=H0 - ref[0], H0_geo=H0_on - ref[0], H0_theta=H0 - H0_on))
+    return rows
