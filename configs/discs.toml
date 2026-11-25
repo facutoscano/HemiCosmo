@@ -49,13 +49,13 @@ naive_l0_deg  = 0.0
 layout          = "discs"
 phase_mode      = "independent"
 discs           = [[345.0, 15.0], [240.0, -5.0], [150.0, -40.0]]
-disc_radius_deg = 30.0
+disc_radius_deg = 60.0
 disc_labels     = ["H1", "H2", "H3"]
 regions         = ["fiducial", "H1", "H2", "H3"]    # R, H1, H2, H3 (presets: FG2021 Fig. 28)
 
 [sims]
 nsims     = 1000            # per ensemble (mixed sky, null, isotropic)
-n_threads = 80              # parallel workers (capped at the logical CPUs)
+n_threads = 60              # parallel workers (capped at the logical CPUs)
 seed      = 1234            # changing it changes every cache file name/metadata
 cov_mode  = "isotropic"     # covariance of the blind analyst: "isotropic" or "stitched"
 indep_cov = true            # covariance from an independent set of nsims (out-of-sample)
@@ -64,7 +64,7 @@ expected  = true            # analytic ensemble mean + response matrices in run_
 
 [prediction]
 # Fisher / second-order predictions without simulations (scripts/run_prediction.py)
-covariance   = "sims"       # "sims": cached isotropic sims (same C as the runs; must exist)
+covariance   = "gaussian"       # "sims": cached isotropic sims (same C as the runs; must exist)
                             # "gaussian": analytic Knox covariance (no sims needed)
 mean_model   = "coupling"   # "coupling": exact ensemble mean (window coupling matrices)
                             # "scalar"  : sum_k a_k D(p_k) (no extra workspaces)
