@@ -2,6 +2,7 @@
 cache/
 results/
 results_archive/
+paper_plots/
 
 # python
 __pycache__/
