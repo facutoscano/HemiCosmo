@@ -70,7 +70,7 @@ mean_model   = "coupling"   # "coupling": exact ensemble mean (window coupling m
                             # "scalar"  : sum_k a_k D(p_k) (no extra workspaces)
 fit          = "linear"     # zero-noise fit of the predicted mean: "linear" or "minuit"
 extra_params = ["Alens"]    # extra fit parameters for the extended prediction ([] = none)
-theta_method = "hs96"       # theta_* backend: "hs96" (fast) or "camb"
+theta_method = "camb"       # theta_* backend: "hs96" (fast) or "camb"
 spectra      = ["TT"]       # see configs/paper.toml
 binning      = "namaster"
 noise        = "none"

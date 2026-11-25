@@ -63,7 +63,7 @@ mean_model   = "coupling"   # "coupling": exact ensemble mean (window coupling m
                             # "scalar"  : sum_k a_k D(p_k) (no extra workspaces)
 fit          = "linear"     # zero-noise fit of the predicted mean: "linear" or "minuit"
 extra_params = ["Alens"]    # extra fit parameters for the extended prediction ([] = none)
-theta_method = "hs96"       # theta_* backend: "hs96" (fast) or "camb"
+theta_method = "camb"       # theta_* backend: "hs96" (fast) or "camb"
 # Data vector. TT + "namaster" = the pseudo-C_l of the simulations (default).
 # Any TE/EE implies binning = "theory": binned sky spectra, Gaussian multi-spectrum
 # covariance (f_sky,eff of the mask) and the scalar mixture sum_k a_k D(p_k).
