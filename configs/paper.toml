@@ -37,18 +37,18 @@ beam_fwhm_deg = 0.0
 # mask = "none"   : full sky
 mask          = "naive"
 naive_mask_h  = 6.0         # |b| <= 6 deg removed (hides the N/S seam at b = 0)
-naive_mask_v  = 0.0         # great-circle band around the meridian l0 (quadrants)
+naive_mask_v  = 6.0         # great-circle band around the meridian l0 (quadrants)
 naive_l0_deg  = 0.0
 
 [sky]
 layout     = "hemi"         # "hemi" (N, S), "quad" (NE, NW, SE, SW) or "discs"
                             # (R + one region per disc: see configs/discs.toml)
 phase_mode = "independent"  # "independent" (causally disconnected) or "shared"
-regions    = ["fiducial", "74H0"]   # one spec per region, in layout order
+regions    = ["fiducial", "fiducial"]   # one spec per region, in layout order
 
 [sims]
 nsims     = 1000            # per ensemble (mixed sky, null, isotropic)
-n_threads = 60              # parallel workers (capped at the logical CPUs)
+n_threads = 80              # parallel workers (capped at the logical CPUs)
 seed      = 1234            # changing it changes every cache file name/metadata
 cov_mode  = "isotropic"     # covariance of the blind analyst: "isotropic" or "stitched"
 indep_cov = true            # covariance from an independent set of nsims (out-of-sample)
@@ -63,7 +63,7 @@ mean_model   = "coupling"   # "coupling": exact ensemble mean (window coupling m
                             # "scalar"  : sum_k a_k D(p_k) (no extra workspaces)
 fit          = "linear"     # zero-noise fit of the predicted mean: "linear" or "minuit"
 extra_params = ["Alens"]    # extra fit parameters for the extended prediction ([] = none)
-theta_method = "camb"       # theta_* backend: "hs96" (fast) or "camb"
+theta_method = "hs96"       # theta_* backend: "hs96" (fast) or "camb"
 # Data vector. TT + "namaster" = the pseudo-C_l of the simulations (default).
 # Any TE/EE implies binning = "theory": binned sky spectra, Gaussian multi-spectrum
 # covariance (f_sky,eff of the mask) and the scalar mixture sum_k a_k D(p_k).
